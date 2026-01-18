@@ -1,0 +1,4 @@
+Keyword,Field,Action,Value
+Garments,cartons,IGNORE_COLUMN,Total Garments Quantity
+Karooni,cartons,PICK_COLUMN,CTN QTY
+PCS,cartons,IGNORE_COLUMN,Total PCS

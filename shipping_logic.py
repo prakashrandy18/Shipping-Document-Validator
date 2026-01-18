@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import csv
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -64,6 +65,30 @@ FIELD_CONFIG = {
 }
 
 
+def load_rules(filename):
+    """
+    Load specific rules from rules.csv if the filename matches a pattern.
+    """
+    context = ""
+    try:
+        csv_path = os.path.join(os.path.dirname(__file__), 'rules.csv')
+        if not os.path.exists(csv_path):
+            return ""
+
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            rules = []
+            for row in reader:
+                # If keyword is in filename (case-insensitive)
+                if row['Keyword'].lower() in filename.lower():
+                    rules.append(f"- RULE: For field '{row['Field']}', {row['Action']} '{row['Value']}'")
+            
+            if rules:
+                context = "\n    APPLICABLE RULES FROM KNOWLEDGE BASE:\n    " + "\n    ".join(rules)
+    except Exception as e:
+        print(f"Error loading rules: {e}")
+    
+    return context
 def extract_shipping_details_llm(file_path):
     """
     Extract shipping details using Google Gemini 1.5 Flash (Multimodal).
@@ -85,10 +110,15 @@ def extract_shipping_details_llm(file_path):
     except Exception as e:
         raise Exception(f"Failed to upload file to Gemini: {e}")
 
-    # 2. Define the Prompt
-    prompt = """
+    # 2. Get Rulebook Context (Safe Add-on)
+    rulebook_context = load_rules(os.path.basename(file_path))
+
+    # 3. Define the Prompt (Standard + Rules)
+    prompt = f"""
     You are an expert Shipping Document Analyst. 
     Analyze the visual layout of this document to extract shipping details.
+    
+    {rulebook_context}
     
     -------------------------------------
     CRITICAL RULE: DISTINGUISH "CARTONS" FROM "PIECES" / "GARMENTS"
@@ -117,13 +147,13 @@ def extract_shipping_details_llm(file_path):
     
     -------------------------------------
     REQUIRED OUTPUT (JSON ONLY):
-    {
+    {{
       "_analysis": "Explain why you chose value X over Y. Mention if you saw 'Total PCS' vs 'Total CTNS'.",
       "assort_quantity": Number or null (Ignored, but note if confusing),
       "cartons": Number or null (The CARTON count. Do NOT pick PCS),
       "gross_weight": Number or null,
       "cbm": Number or null
-    }
+    }}
     -------------------------------------
     """
 

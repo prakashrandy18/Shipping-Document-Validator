@@ -1,33 +1,39 @@
-/* ===== CSS Variables ===== */
+/* ===== CSS Variables (Premium Obsidian Theme) ===== */
 :root {
     --primary: #6366f1;
     --primary-light: #818cf8;
     --primary-dark: #4f46e5;
+    --accent: #8b5cf6;
+    /* Added accent for gradients */
+
     --success: #10b981;
     --success-light: #34d399;
     --error: #ef4444;
     --error-light: #f87171;
     --warning: #f59e0b;
     --warning-light: #fbbf24;
-    --info: #3b82f6;
-    --info-light: #60a5fa;
 
-    --bg-dark: #0f0f23;
-    --bg-card: rgba(30, 30, 60, 0.6);
-    --bg-card-hover: rgba(40, 40, 80, 0.8);
-    --bg-input: rgba(0, 0, 0, 0.3);
+    --bg-dark: #09090b;
+    /* Obsidian / Midnight */
+    --bg-card: rgba(24, 24, 27, 0.7);
+    /* Zinc-950 with opacity */
+    --bg-card-hover: rgba(39, 39, 42, 0.8);
+    --bg-input: rgba(255, 255, 255, 0.03);
 
-    --text-primary: #ffffff;
+    --text-primary: #fafafa;
     --text-secondary: #a1a1aa;
-    --text-muted: #71717a;
+    --text-muted: #52525b;
 
-    --border: rgba(99, 102, 241, 0.2);
-    --border-hover: rgba(99, 102, 241, 0.5);
+    --border: rgba(255, 255, 255, 0.08);
+    /* Subtle border */
+    --border-hover: rgba(99, 102, 241, 0.4);
 
-    --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.3);
-    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --shadow-glow: 0 0 30px rgba(99, 102, 241, 0.15);
+    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
 
-    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* ===== Base Styles ===== */
@@ -38,12 +44,15 @@
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-main);
     background: var(--bg-dark);
     color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
-    line-height: 1.6;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding-top: 140px;
+    /* Space for fixed header */
 }
 
 /* ===== Background Effects ===== */
@@ -345,90 +354,70 @@ body {
     background: rgba(16, 185, 129, 0.1);
 }
 
-/* ===== Buttons ===== */
+/* ===== Buttons (Premium) ===== */
 .primary-btn,
 .secondary-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 16px 32px;
+    gap: 8px;
+    padding: 12px 24px;
+    /* More compact */
     border: none;
-    border-radius: 12px;
+    border-radius: 10px;
+    /* Modern radius */
     font-family: inherit;
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 0.95rem;
+    font-weight: 500;
     cursor: pointer;
     transition: var(--transition);
     position: relative;
     overflow: hidden;
+    letter-spacing: 0.3px;
 }
 
 .primary-btn {
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    background: linear-gradient(135deg, var(--primary), var(--accent));
     color: white;
-    min-width: 200px;
-}
-
-.primary-btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: 0.5s;
-}
-
-.primary-btn:hover::before {
-    left: 100%;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .primary-btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 40px rgba(99, 102, 241, 0.4);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    filter: brightness(1.1);
+}
+
+.primary-btn:active {
+    transform: translateY(0);
 }
 
 .primary-btn:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
+    filter: grayscale(1);
     transform: none;
+    box-shadow: none;
 }
 
 .secondary-btn {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
     color: var(--text-secondary);
     border: 1px solid var(--border);
 }
 
 .secondary-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.08);
     color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
-.btn-icon {
-    font-size: 1.2rem;
-}
-
-.btn-loader {
-    display: none;
-}
-
-.primary-btn.loading .btn-text,
-.primary-btn.loading .btn-icon {
-    opacity: 0;
-}
-
-.primary-btn.loading .btn-loader {
-    display: flex;
-    position: absolute;
-}
-
+/* Spinner Adjustments */
 .spinner {
-    width: 24px;
-    height: 24px;
-    border: 3px solid rgba(255, 255, 255, 0.3);
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-top-color: white;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -1017,7 +1006,9 @@ body {
     to {
         opacity: 0;
     }
-}/* ===== Batch Section ===== */
+}
+
+/* ===== Batch Section ===== */
 .batch-section {
     background: var(--bg-card);
     border-radius: 24px;
@@ -1135,4 +1126,388 @@ body {
 
 .hidden {
     display: none !important;
+}
+
+/* ===== Branding Updates ===== */
+.logo-img {
+    max-height: 80px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
+}
+
+.company-details {
+    margin-top: 30px;
+    padding: 25px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 15, 35, 0.4);
+    /* Darker, sleek background */
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    /* Animation */
+    animation: fadeIn 1s ease-out;
+}
+
+.company-details h2 {
+    font-size: 1.5rem;
+    background: linear-gradient(90deg, #ffffff, #a5b4fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+
+.company-details>p {
+    color: var(--primary-light);
+    font-weight: 500;
+    margin-bottom: 20px;
+    font-size: 1rem;
+}
+
+.address-block {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 15px 20px;
+    border-radius: 12px;
+}
+
+.address-block .icon {
+    font-size: 1.2rem;
+    margin-top: 2px;
+}
+
+.glass-card {
+    /* Ensuring this class is robust if not fully defined elsewhere */
+    background: rgba(30, 30, 60, 0.4);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== Batch Results Update ===== */
+.batch-results {
+    margin-top: 20px;
+    animation: slideUp 0.5s ease-out;
+}
+
+.batch-table-wrapper {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.batch-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.batch-table th,
+.batch-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.batch-table th {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+}
+
+.batch-row-success {
+    /* valid row */
+}
+
+.batch-row-error {
+    background: rgba(239, 68, 68, 0.15);
+    /* Red tint */
+    border-left: 3px solid var(--error);
+}
+
+.batch-row-error td {
+    color: #fca5a5;
+}
+
+.batch-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.batch-details {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    max-width: 300px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.batch-actions-footer {
+    display: flex;
+    justify-content: center;
+}
+
+.app-title {
+    font-size: 1.8rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #fff, #818cf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+}
+
+.title-underline {
+    width: 60px;
+    height: 3px;
+    background: var(--primary);
+    margin: 0 auto;
+    border-radius: 2px;
+}
+
+/* ===== Logo & Header Alignment ===== */
+.brand-flex {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 25px;
+    padding: 20px 30px;
+    text-align: left;
+    /* Reset center align from company-details if needed */
+}
+
+/* Override previous logo-img if needed */
+.logo-img {
+    max-height: 70px;
+    /* Slightly smaller to fit with text */
+    width: auto;
+}
+
+.title-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    /* Left align title and underline */
+}
+
+.title-underline {
+    margin: 0;
+    /* Align left */
+}
+
+/* Adjust company-details to not center text if we want left align next to logo */
+.company-details {
+    text-align: left;
+}
+
+/* ===== Compact Header ===== */
+.compact-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 25px;
+    margin-bottom: 25px;
+    border-radius: 16px;
+    background: rgba(30, 30, 60, 0.6);
+    /* Consistent with glass-card */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.brand-section {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header-logo {
+    height: 40px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.2));
+}
+
+.header-title {
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin: 0;
+    background: linear-gradient(90deg, #fff, #818cf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Hide original header elements if they conflict or exist */
+.header {
+    display: none;
+}
+
+/* ===== Standard Header Update ===== */
+.compact-header {
+    background: transparent;
+    /* Remove background or make it solid dark if preferred */
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    border-radius: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    /* Subtle divider */
+    margin-bottom: 30px;
+    padding: 10px 0;
+    /* Align with container padding */
+}
+
+/* Ensure logo and title still look good */
+.header-logo {
+    filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0));
+    /* Remove glowing shadow if it clashes */
+    height: 45px;
+}
+
+/* ===== Premium UI Polish (Overrides) ===== */
+
+/* 1. Enhanced Data Grid Table */
+.batch-table-wrapper {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+}
+
+.batch-table th {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 16px 24px;
+    font-weight: 600;
+}
+
+.batch-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+    transition: background 0.2s;
+}
+
+.batch-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Status Badges in Table */
+.batch-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.batch-row-success .batch-status {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.batch-row-error .batch-status {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.batch-row-error {
+    background: rgba(239, 68, 68, 0.02);
+    /* Subtle tint for whole row */
+    border-left: 2px solid var(--error);
+}
+
+/* 2. Header Polish */
+.compact-header {
+    /* Ensure glass effect with bottom border */
+    background: rgba(9, 9, 11, 0.6);
+    /* Semi-transparent obsidian */
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    margin-bottom: 30px;
+}
+
+.header-title {
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    /* Tighter, more modern */
+    background: linear-gradient(to right, #fff, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* 3. Dropzone Micro-Interactions */
+.upload-card {
+    background: rgba(24, 24, 27, 0.4);
+    border: 2px dashed rgba(255, 255, 255, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.upload-card:hover {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.05);
+    /* Glow form inside */
+    transform: translateY(-4px) scale(1.01);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.upload-icon {
+    color: var(--primary);
+    filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.4));
+}
+
+/* Force Fixed Header Overrides */
+.compact-header {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    border-radius: 0;
+    padding: 12px 10%;
+    /* Match container padding approx */
+    background: rgba(9, 9, 11, 0.85);
+    /* Stronger background for fixed */
+    backdrop-filter: blur(20px);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
 }

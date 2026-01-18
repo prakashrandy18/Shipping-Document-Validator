@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shipping Document Validator AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/apl_logo.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Confetti Library -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -21,17 +22,14 @@
 
     <div class="container">
 
-        <header class="header">
-            <div class="header-top">
-                <div class="logo">
-                    <div class="logo-icon">🚢</div>
-                    <h1>DocValidator AI</h1>
-                </div>
-                <button id="resetBtn" class="secondary-btn small-btn hidden" onclick="resetApp()">
-                    <span>New Comparison</span>
-                </button>
+        <header class="compact-header">
+            <div class="brand-section">
+                <img src="{{ url_for('static', filename='img/apl_logo.png') }}" alt="APL Logistics" class="header-logo">
+                <h1 class="header-title">APL SHIPPING DOC VALIDATOR</h1>
             </div>
-            <p class="subtitle">Instant Smart Document Verification</p>
+            <button id="resetBtn" class="secondary-btn small-btn hidden" onclick="resetApp()">
+                <span>New Comparison</span>
+            </button>
         </header>
 
         <div class="mode-switch">
@@ -139,6 +137,37 @@
                         <span>Start Batch Processing</span>
                     </button>
 
+                    <!-- Batch Results Summary -->
+                    <div id="batchResultsContainer" class="batch-results hidden">
+                        <div class="results-header">
+                            <h3>Batch Summary</h3>
+                            <button class="secondary-btn small-btn" onclick="downloadBatchReport()">
+                                <span>Download Excel Report</span>
+                            </button>
+                        </div>
+
+                        <div class="batch-table-wrapper">
+                            <table class="batch-table">
+                                <thead>
+                                    <tr>
+                                        <th>ZIP File</th>
+                                        <th>Status</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batchTableBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="batch-actions-footer">
+                            <button class="primary-btn" onclick="resetBatch()">
+                                <span>Start New Batch</span>
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </section>
 
@@ -223,12 +252,18 @@
                 document.getElementById('uploadSection').classList.add('hidden');
                 document.getElementById('batchSection').classList.remove('hidden');
                 document.getElementById('resultsSection').classList.add('hidden');
-                document.getElementById('step2').classList.add('active'); // Reuse step 2 indicator as "Batch"
+                document.getElementById('step1').classList.add('active');
+                document.getElementById('step2').classList.remove('active');
 
                 // Update buttons
                 document.querySelector('button[onclick="switchMode(\'batch\')"]').classList.add('active');
             }
         }
+
+        // Default to Batch Mode on Load
+        window.addEventListener('DOMContentLoaded', () => {
+            switchMode('batch');
+        });
 
         // --- Batch Logic ---
         const batchFiles = new DataTransfer();
@@ -315,9 +350,8 @@
                         progressText.textContent = 'Completed!';
                         complete = true;
 
-                        // 3. Download
-                        window.location.href = `/batch_download/${jobId}`;
-                        alert("Batch completed! Downloading report.");
+                        // Show Results Summary
+                        renderBatchResults(statusData.results, jobId);
                     } else if (statusData.status === 'failed') {
                         throw new Error(statusData.error || "Job failed");
                     }
@@ -329,9 +363,73 @@
                 progressContainer.classList.add('error');
             } finally {
                 btn.disabled = false;
-                btn.classList.remove('hidden');
-                // Keep progress bar visible for a moment so they see 100%
+                // btn.classList.remove('hidden'); // Keep hidden if we showed results
             }
+        }
+
+        let currentJobId = null;
+
+        function renderBatchResults(results, jobId) {
+            currentJobId = jobId;
+            document.getElementById('batchProgressContainer').classList.add('hidden');
+            document.getElementById('batchResultsContainer').classList.remove('hidden');
+
+            const tbody = document.getElementById('batchTableBody');
+            tbody.innerHTML = '';
+
+            results.forEach(row => {
+                const tr = document.createElement('tr');
+                const isMatch = row.Status === 'MATCH';
+                const isError = !isMatch; // Warning or Error
+
+                if (isError) {
+                    tr.classList.add('batch-row-error');
+                } else {
+                    tr.classList.add('batch-row-success');
+                }
+
+                const icon = isMatch ? '✅' : (row.Status === 'Error' ? '❌' : '⚠️');
+                const statusText = row.Status || 'Unknown';
+                const errorMsg = row.Error_Message || (isMatch ? 'All fields match' : 'Mismatch found');
+
+                tr.innerHTML = `
+                    <td>
+                        <div class="zip-name">${row.Zip_Filename}</div>
+                    </td>
+                    <td>
+                        <div class="batch-status">
+                            <span>${icon}</span>
+                            <span>${statusText}</span>
+                        </div>
+                    </td>
+                    <td class="batch-details">
+                        ${errorMsg}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function downloadBatchReport() {
+            if (currentJobId) {
+                window.location.href = `/batch_download/${currentJobId}`;
+            }
+        }
+
+        function resetBatch() {
+            // Reset UI State
+            document.getElementById('batchResultsContainer').classList.add('hidden');
+            document.getElementById('batchProgressContainer').classList.add('hidden');
+            document.getElementById('batchProcessBtn').classList.remove('hidden');
+            document.getElementById('batchProcessBtn').disabled = true;
+
+            // Clear Files
+            batchFiles.items.clear();
+            renderBatchList();
+            document.getElementById('batchDropZone').classList.remove('has-file');
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Processing... 0%';
+            currentJobId = null;
         }
 
 
