@@ -122,16 +122,21 @@
                         <ul id="batchFileList" class="file-list"></ul>
                     </div>
 
-                    <div class="deployment-warning">
-                        ⚠️ <strong>Note:</strong> Processing many files may take time. <br>
-                        Cloud deployments (Render) often timeout after 100s. Use for small batches (3-5 ZIPs).
+
+
+                    <!-- Progress Section -->
+                    <div id="batchProgressContainer" class="progress-container hidden">
+                        <div class="progress-label">
+                            <span id="progressText">Processing... 0%</span>
+                            <span class="spinner-small"></span>
+                        </div>
+                        <div class="progress-track">
+                            <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+                        </div>
                     </div>
 
                     <button id="batchProcessBtn" class="primary-btn" onclick="startBatchProcess()" disabled>
-                        <span>Process Batch</span>
-                        <div class="btn-loader">
-                            <div class="spinner"></div>
-                        </div>
+                        <span>Start Batch Processing</span>
                     </button>
 
                 </div>
@@ -269,8 +274,15 @@
 
         async function startBatchProcess() {
             const btn = document.getElementById('batchProcessBtn');
-            btn.classList.add('loading');
+            const progressContainer = document.getElementById('batchProgressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+
             btn.disabled = true;
+            btn.classList.add('hidden'); // Hide button while processing
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Starting...';
 
             const formData = new FormData();
             for (let i = 0; i < batchFiles.files.length; i++) {
@@ -278,26 +290,47 @@
             }
 
             try {
+                // 1. Submit Job
                 const response = await fetch('/batch_process', { method: 'POST', body: formData });
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'batch_results.csv';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    alert("Batch processing complete! Downloading report...");
-                } else {
-                    const err = await response.json();
-                    alert("Error: " + (err.error || " Unknown error"));
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error || "Failed to start");
+
+                const jobId = data.job_id;
+
+                // 2. Poll Status
+                let complete = false;
+                while (!complete) {
+                    await new Promise(r => setTimeout(r, 1000)); // Wait 1 sec
+
+                    const statusRes = await fetch(`/batch_status/${jobId}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'processing' || statusData.status === 'queued') {
+                        const pct = statusData.progress || 0;
+                        progressBar.style.width = `${pct}%`;
+                        progressText.textContent = `Processing... ${pct}%`;
+                    } else if (statusData.status === 'completed') {
+                        progressBar.style.width = '100%';
+                        progressText.textContent = 'Completed!';
+                        complete = true;
+
+                        // 3. Download
+                        window.location.href = `/batch_download/${jobId}`;
+                        alert("Batch completed! Downloading report.");
+                    } else if (statusData.status === 'failed') {
+                        throw new Error(statusData.error || "Job failed");
+                    }
                 }
+
             } catch (e) {
-                alert("Network Error: " + e.message);
+                alert("Error: " + e.message);
+                progressText.textContent = 'Error occurred';
+                progressContainer.classList.add('error');
             } finally {
-                btn.classList.remove('loading');
                 btn.disabled = false;
+                btn.classList.remove('hidden');
+                // Keep progress bar visible for a moment so they see 100%
             }
         }
 

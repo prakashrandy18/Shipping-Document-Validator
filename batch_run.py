@@ -6,64 +6,53 @@ import tempfile
 import csv
 import time
 import shutil
-from shipping_logic import extract_shipping_details_llm, compare_three_documents
+from shipping_logic import extract_shipping_details_llm, compare_three_documents, classify_document
 
-# Configuration
-INPUT_FOLDER = "batch_input"
-OUTPUT_FILE = "batch_results.csv"
-BATCH_LIMIT = 10  # User requested limit for testing
-API_DELAY_SECONDS = 5 # To avoid rate limits
+# ... (Configuration stays similar)
 
 def run_batch_process():
-    # 1. Setup
-    if not os.path.exists(INPUT_FOLDER):
-        os.makedirs(INPUT_FOLDER)
-        print(f"Created '{INPUT_FOLDER}'. Please put ZIP files in there and run again.")
-        return
+    # ... (Setup code stays same) ...
+    # ... (After finding PDFs) ...
 
-    zip_files = glob.glob(os.path.join(INPUT_FOLDER, "*.zip"))
-    
-    if not zip_files:
-        print(f"No ZIP files found in '{INPUT_FOLDER}'.")
-        return
+            # Smart Sort PDFs into slots
+            assigned_docs = {'doc_a': None, 'doc_b': None, 'doc_c': None}
+            remaining_pdfs = []
 
-    print(f"Found {len(zip_files)} ZIP files. Processing first {BATCH_LIMIT}...")
-    zip_files = zip_files[:BATCH_LIMIT]
-
-    results = []
-
-    # 2. Iterate Files
-    for i, zip_path in enumerate(zip_files):
-        zip_name = os.path.basename(zip_path)
-        print(f"\n[{i+1}/{len(zip_files)}] Processing {zip_name}...")
-        
-        row = {'Zip_Filename': zip_name, 'Status': '', 'Error_Message': ''}
-        
-        temp_dir = tempfile.mkdtemp()
-        
-        try:
-            # Unzip
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
+            # 1. Try to classify
+            for pdf_path in pdfs:
+                filename = os.path.basename(pdf_path)
+                doc_type = classify_document(filename)
+                
+                if doc_type and assigned_docs[doc_type] is None:
+                    assigned_docs[doc_type] = pdf_path
+                else:
+                    remaining_pdfs.append(pdf_path) # Duplicate type or unknown
             
-            # Find PDFs
-            pdfs = glob.glob(os.path.join(temp_dir, "**", "*.pdf"), recursive=True)
-            pdfs = [p for p in pdfs if not os.path.basename(p).startswith('.')] # Ignore hidden files
-            
-            if len(pdfs) < 2:
-                row['Status'] = 'Skipped'
-                row['Error_Message'] = f"Found only {len(pdfs)} PDFs (Need at least 2)"
-                results.append(row)
-                continue
-            
-            # Take first 3
-            selected_pdfs = pdfs[:3]
-            doc_keys = ['doc_a', 'doc_b', 'doc_c']
+            # 2. Fill empty slots with remaining files
+            for key in ['doc_a', 'doc_b', 'doc_c']:
+                if assigned_docs[key] is None and remaining_pdfs:
+                    assigned_docs[key] = remaining_pdfs.pop(0)
+
+            # 3. Check if we have enough
+            valid_docs = {k: v for k, v in assigned_docs.items() if v}
+            if len(valid_docs) < 3:
+                 # If we have < 3, we can still proceed but might miss some comparisons
+                 # But sticking to previous logic:
+                 if len(pdfs) < 2: # Keep original hard check
+                     row['Status'] = 'Skipped'
+                     row['Error_Message'] = f"Found {len(pdfs)} PDFs (Need 2+)"
+                     results.append(row)
+                     continue
+
             extracted_docs = {'doc_a': {}, 'doc_b': {}, 'doc_c': {}}
             
             # Extract Data
-            for idx, pdf_file in enumerate(selected_pdfs):
-                key = doc_keys[idx]
+            doc_keys = ['doc_a', 'doc_b', 'doc_c']
+            for key in doc_keys:
+                pdf_file = assigned_docs.get(key)
+                if not pdf_file:
+                    continue # Skip if missing
+                
                 row[f'{key}_Name'] = os.path.basename(pdf_file)
                 
                 try:

@@ -17,13 +17,11 @@ import csv
 import io
 from flask import Flask, render_template, request, jsonify, send_file
 from dotenv import load_dotenv
-from shipping_logic import extract_shipping_details_llm, compare_three_documents, GENAI_AVAILABLE, GOOGLE_API_KEY
+from shipping_logic import extract_shipping_details_llm, compare_three_documents, classify_document, GENAI_AVAILABLE, GOOGLE_API_KEY
 
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Max 16MB upload
+app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024  # Increased to 128MB for large batches
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
 
 
@@ -229,125 +227,201 @@ def compare_direct():
     })
 
 
-@app.route('/batch_process', methods=['POST'])
-def batch_process():
-    """
-    Process multiple ZIP files and return a CSV report.
-    """
-    uploaded_files = request.files.getlist('zip_files')
-    
-    if not uploaded_files:
-         return jsonify({'error': 'No files uploaded'}), 400
+# --- Async Job Management ---
+import uuid
+import threading
 
-    # Create a wrapper temp dir
-    batch_temp_dir = tempfile.mkdtemp()
+# Job Store (In-memory for simplicity)
+JOBS = {}
+
+def process_batch_job(job_id, uploaded_files, app_instance):
+    """
+    Background worker to process ZIP files.
+    """
+    JOBS[job_id]['status'] = 'processing'
+    JOBS[job_id]['progress'] = 0
+    JOBS[job_id]['total'] = len(uploaded_files)
+    
     results = []
     
+    # Create temp dir for this job
+    job_temp_dir = tempfile.mkdtemp()
+    
     try:
-        for f in uploaded_files:
-            if not f.filename.endswith('.zip'):
-                continue
-                
-            zip_path = os.path.join(batch_temp_dir, f.filename)
-            f.save(zip_path)
+        # We can process ZIPs in parallel too! 
+        # But to be safe with rate limits, let's do 3 concurrent ZIPs max.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_zip = {}
             
-            # --- Per Zip Logic (Copied/Adapted from batch_run.py) ---
-            row = {'Zip_Filename': f.filename, 'Status': '', 'Error_Message': ''}
-            temp_extract_dir = tempfile.mkdtemp()
+            # 1. Submit all Zips
+            for f_storage in uploaded_files:
+                # Save to disk first so threads can access
+                zip_path = os.path.join(job_temp_dir, f_storage['filename'])
+                with open(zip_path, 'wb') as zf:
+                    zf.write(f_storage['stream'].read())
+                
+                future_to_zip[executor.submit(process_single_zip, zip_path)] = f_storage['filename']
             
-            try:
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(temp_extract_dir)
+            # 2. Collect Results
+            completed_count = 0
+            for future in concurrent.futures.as_completed(future_to_zip):
+                zip_name = future_to_zip[future]
+                try:
+                    res = future.result() # Returns a list of rows (usually 1 row per zip)
+                    results.extend(res)
+                except Exception as e:
+                    results.append({'Zip_Filename': zip_name, 'Status': 'Error', 'Error_Message': str(e)})
                 
-                pdfs = glob.glob(os.path.join(temp_extract_dir, "**", "*.pdf"), recursive=True)
-                pdfs = [p for p in pdfs if not os.path.basename(p).startswith('.')]
-                
-                if len(pdfs) < 2:
-                    row['Status'] = 'Skipped'
-                    row['Error_Message'] = f"Found {len(pdfs)} PDFs (Need 2+)"
-                    results.append(row)
-                    continue
-                
-                # Take first 3
-                selected_pdfs = pdfs[:3]
-                doc_keys = ['doc_a', 'doc_b', 'doc_c']
-                extracted_docs = {'doc_a': {}, 'doc_b': {}, 'doc_c': {}}
-                
-                # Extract
-                for idx, pdf_file in enumerate(selected_pdfs):
-                    key = doc_keys[idx]
-                    row[f'{key}_Name'] = os.path.basename(pdf_file)
-                    try:
-                        details = extract_shipping_details_llm(pdf_file)
-                        extracted_docs[key] = {'details': details}
-                        if details:
-                             row[f'{key}_Cartons'] = details.get('cartons', {}).get('value')
-                             row[f'{key}_Weight'] = details.get('gross_weight', {}).get('value')
-                             row[f'{key}_Volume'] = details.get('cbm', {}).get('value')
-                        
-                        # Small delay to be kind to API if running many
-                        time.sleep(2) 
-                    except Exception as e:
-                        row['Error_Message'] += f"[{key} Err: {str(e)}] "
-                
-                # Compare
-                comp_res = compare_three_documents(
-                    extracted_docs['doc_a'].get('details', {}),
-                    extracted_docs['doc_b'].get('details', {}),
-                    extracted_docs['doc_c'].get('details', {})
-                )
-                
-                all_match = comp_res.get('all_match', False)
-                row['Status'] = 'MATCH' if all_match else 'MISMATCH'
-                for comp in comp_res.get('comparisons', []):
-                     if comp['status'] != 'success':
-                         row['Error_Message'] += f"{comp['field']} {comp['status']}; "
+                completed_count += 1
+                JOBS[job_id]['progress'] = int((completed_count / len(uploaded_files)) * 100)
+        
+        # 3. Generate CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["SHIPPING DOCUMENT BATCH REPORT"])
+        writer.writerow([])
+        
+        for r in results:
+            writer.writerow(["--------------------------------------------------------------------------------"])
+            writer.writerow(["ZIP FILE", r.get('Zip_Filename')])
+            writer.writerow(["STATUS", r.get('Status')])
+            if r.get('Error_Message'):
+                writer.writerow(["ERRORS", r.get('Error_Message')])
+            writer.writerow([])
             
-            except Exception as e:
-                row['Status'] = 'Error'
-                row['Error_Message'] = str(e)
-            finally:
-                shutil.rmtree(temp_extract_dir)
-                results.append(row)
-    
+            doc_a = r.get('doc_a_Name', 'Doc A')
+            doc_b = r.get('doc_b_Name', 'Doc B')
+            doc_c = r.get('doc_c_Name', 'Doc C')
+            
+            writer.writerow(["FIELD", f"OBL/PKL ({doc_a})", f"INVOICE ({doc_b})", f"PACKING LIST ({doc_c})"])
+            
+            def g(k): return str(r.get(k) or '--')
+            writer.writerow(["Cartons", g('doc_a_Cartons'), g('doc_b_Cartons'), g('doc_c_Cartons')])
+            writer.writerow(["Gross Weight", g('doc_a_Weight'), g('doc_b_Weight'), g('doc_c_Weight')])
+            writer.writerow(["Volume (CBM)", g('doc_a_Volume'), g('doc_b_Volume'), g('doc_c_Volume')])
+            writer.writerow([])
+            writer.writerow([])
+
+        # Store Result
+        JOBS[job_id]['csv_data'] = output.getvalue()
+        JOBS[job_id]['status'] = 'completed'
+        
+    except Exception as e:
+        JOBS[job_id]['status'] = 'failed'
+        JOBS[job_id]['error'] = str(e)
+        print(f"Job {job_id} failed: {e}")
     finally:
-        shutil.rmtree(batch_temp_dir)
-        
-    # Generate CSV (Vertical Report Format)
-    output = io.StringIO()
-    writer = csv.writer(output)
+        shutil.rmtree(job_temp_dir)
+
+def process_single_zip(zip_path):
+    """
+    Helper to process ONE zip file. Returns a list of result rows (usually 1).
+    """
+    row = {'Zip_Filename': os.path.basename(zip_path), 'Status': '', 'Error_Message': ''}
+    temp_extract_dir = tempfile.mkdtemp()
     
-    writer.writerow(["SHIPPING DOCUMENT BATCH REPORT"])
-    writer.writerow([])
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_extract_dir)
+        
+        pdfs = glob.glob(os.path.join(temp_extract_dir, "**", "*.pdf"), recursive=True)
+        pdfs = [p for p in pdfs if not os.path.basename(p).startswith('.')]
+        
+        if len(pdfs) < 2:
+            row['Status'] = 'Skipped'
+            row['Error_Message'] = f"Found {len(pdfs)} PDFs (Need 2+)"
+            return [row]
+        
+        # Classification
+        assigned_docs = {'doc_a': None, 'doc_b': None, 'doc_c': None}
+        remaining_pdfs = []
+        for p in pdfs:
+            doc_type = classify_document(os.path.basename(p))
+            if doc_type and assigned_docs[doc_type] is None:
+                assigned_docs[doc_type] = p
+            else:
+                remaining_pdfs.append(p)
+        for key in ['doc_a', 'doc_b', 'doc_c']:
+            if assigned_docs[key] is None and remaining_pdfs:
+                assigned_docs[key] = remaining_pdfs.pop(0)
+
+        extracted_docs = {}
+        # Extract Loop
+        for key in ['doc_a', 'doc_b', 'doc_c']:
+            pdf_file = assigned_docs.get(key)
+            if not pdf_file: continue
+            
+            row[f'{key}_Name'] = os.path.basename(pdf_file)
+            try:
+                details = extract_shipping_details_llm(pdf_file)
+                extracted_docs[key] = {'details': details}
+                if details:
+                        row[f'{key}_Cartons'] = details.get('cartons', {}).get('value')
+                        row[f'{key}_Weight'] = details.get('gross_weight', {}).get('value')
+                        row[f'{key}_Volume'] = details.get('cbm', {}).get('value')
+            except Exception as e:
+                row['Error_Message'] += f"[{key} Err: {str(e)}] "
+        
+        # Compare
+        comp_res = compare_three_documents(
+            extracted_docs.get('doc_a', {}).get('details', {}),
+            extracted_docs.get('doc_b', {}).get('details', {}),
+            extracted_docs.get('doc_c', {}).get('details', {})
+        )
+        row['Status'] = 'MATCH' if comp_res.get('all_match') else 'MISMATCH'
+        for comp in comp_res.get('comparisons', []):
+                if comp['status'] != 'success':
+                    row['Error_Message'] += f"{comp['field']} {comp['status']}; "
+        
+        return [row]
+
+    except Exception as e:
+        row['Status'] = 'Error'
+        row['Error_Message'] = str(e)
+        return [row]
+    finally:
+        shutil.rmtree(temp_extract_dir)
+
+
+@app.route('/batch_process', methods=['POST'])
+def batch_process():
+    uploaded_files = request.files.getlist('zip_files')
+    if not uploaded_files: return jsonify({'error': 'No files'}), 400
+
+    # Read files into memory/buffers to pass to thread
+    # (Flask file objects are not thread safe if request ends, so we read them)
+    files_data = []
+    for f in uploaded_files:
+        if f.filename.endswith('.zip'):
+            # Store name and content stream
+            files_data.append({
+                'filename': f.filename,
+                'stream': io.BytesIO(f.read())
+            })
+
+    job_id = str(uuid.uuid4())
+    JOBS[job_id] = {'status': 'queued', 'progress': 0}
     
-    for r in results:
-        writer.writerow(["--------------------------------------------------------------------------------"])
-        writer.writerow(["ZIP FILE", r.get('Zip_Filename')])
-        writer.writerow(["STATUS", r.get('Status')])
-        if r.get('Error_Message'):
-            writer.writerow(["ERRORS", r.get('Error_Message')])
-        writer.writerow([])
-        
-        # Table Header
-        doc_a = r.get('doc_a_Name', 'Doc A')
-        doc_b = r.get('doc_b_Name', 'Doc B')
-        doc_c = r.get('doc_c_Name', 'Doc C')
-        
-        writer.writerow(["FIELD", f"OBL/PKL ({doc_a})", f"INVOICE ({doc_b})", f"PACKING LIST ({doc_c})"])
-        
-        # Helper stringifier
-        def g(k): return str(r.get(k) or '--')
-        
-        writer.writerow(["Cartons", g('doc_a_Cartons'), g('doc_b_Cartons'), g('doc_c_Cartons')])
-        writer.writerow(["Gross Weight", g('doc_a_Weight'), g('doc_b_Weight'), g('doc_c_Weight')])
-        writer.writerow(["Volume (CBM)", g('doc_a_Volume'), g('doc_b_Volume'), g('doc_c_Volume')])
-        
-        writer.writerow([])
-        writer.writerow([])
-        
-    # Send as file
+    # Start Thread
+    thread = threading.Thread(target=process_batch_job, args=(job_id, files_data, app))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'success': True, 'job_id': job_id})
+
+@app.route('/batch_status/<job_id>', methods=['GET'])
+def batch_status(job_id):
+    job = JOBS.get(job_id)
+    if not job: return jsonify({'error': 'Job not found'}), 404
+    return jsonify(job)
+
+@app.route('/batch_download/<job_id>', methods=['GET'])
+def batch_download(job_id):
+    job = JOBS.get(job_id)
+    if not job or job['status'] != 'completed': return jsonify({'error': 'Not ready'}), 400
+    
     mem = io.BytesIO()
-    mem.write(output.getvalue().encode('utf-8'))
+    mem.write(job['csv_data'].encode('utf-8'))
     mem.seek(0)
     
     return send_file(
