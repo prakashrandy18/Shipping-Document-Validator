@@ -34,6 +34,11 @@
             <p class="subtitle">Instant Smart Document Verification</p>
         </header>
 
+        <div class="mode-switch">
+            <button class="mode-btn active" onclick="switchMode('standard')">Single Comparison</button>
+            <button class="mode-btn" onclick="switchMode('batch')">Batch Processing</button>
+        </div>
+
         <div class="step-indicator">
             <div class="step active" id="step1">
                 <div class="step-number">1</div>
@@ -47,7 +52,7 @@
         </div>
 
         <main>
-            <!-- STEP 1: UPLOAD -->
+            <!-- STEP 1: UPLOAD (Single) -->
             <section id="uploadSection" class="upload-section">
                 <div class="upload-form">
                     <div class="upload-cards">
@@ -97,6 +102,38 @@
                     </button>
 
                     <div id="uploadError" class="error-message hidden"></div>
+                </div>
+            </section>
+
+            <!-- BATCH UPLOAD SECTION -->
+            <section id="batchSection" class="batch-section hidden">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2>Batch Processing</h2>
+                        <p>Upload multiple ZIP files. Each ZIP should contain a set of 3 PDFs.</p>
+                    </div>
+
+                    <div class="batch-upload-area" id="batchDropZone">
+                        <input type="file" id="batchFileInput" multiple accept=".zip" class="hidden"
+                            onchange="handleBatchSelect(this)">
+                        <div class="upload-icon">📦</div>
+                        <h3>Drag & Drop ZIP files here</h3>
+                        <p>or click to browse</p>
+                        <ul id="batchFileList" class="file-list"></ul>
+                    </div>
+
+                    <div class="deployment-warning">
+                        ⚠️ <strong>Note:</strong> Processing many files may take time. <br>
+                        Cloud deployments (Render) often timeout after 100s. Use for small batches (3-5 ZIPs).
+                    </div>
+
+                    <button id="batchProcessBtn" class="primary-btn" onclick="startBatchProcess()" disabled>
+                        <span>Process Batch</span>
+                        <div class="btn-loader">
+                            <div class="spinner"></div>
+                        </div>
+                    </button>
+
                 </div>
             </section>
 
@@ -164,7 +201,108 @@
         // State
         let uploadedFiles = { doc_a: null, doc_b: null, doc_c: null };
 
-        // --- Drag & Drop & File Handling ---
+        // --- Tab / Mode Switching ---
+        function switchMode(mode) {
+            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.mode-btn').forEach(el => el.classList.remove('active'));
+
+            if (mode === 'standard') {
+                document.getElementById('uploadSection').classList.remove('hidden');
+                document.getElementById('batchSection').classList.add('hidden');
+                document.getElementById('resultsSection').classList.add('hidden');
+                document.getElementById('step1').classList.add('active');
+
+                // Update buttons
+                document.querySelector('button[onclick="switchMode(\'standard\')"]').classList.add('active');
+            } else {
+                document.getElementById('uploadSection').classList.add('hidden');
+                document.getElementById('batchSection').classList.remove('hidden');
+                document.getElementById('resultsSection').classList.add('hidden');
+                document.getElementById('step2').classList.add('active'); // Reuse step 2 indicator as "Batch"
+
+                // Update buttons
+                document.querySelector('button[onclick="switchMode(\'batch\')"]').classList.add('active');
+            }
+        }
+
+        // --- Batch Logic ---
+        const batchFiles = new DataTransfer();
+        const batchDropZone = document.getElementById('batchDropZone');
+        const batchInput = document.getElementById('batchFileInput');
+
+        batchDropZone.addEventListener('click', () => batchInput.click());
+        batchDropZone.addEventListener('dragover', (e) => { e.preventDefault(); batchDropZone.classList.add('dragover'); });
+        batchDropZone.addEventListener('dragleave', () => { batchDropZone.classList.remove('dragover'); });
+        batchDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            batchDropZone.classList.remove('dragover');
+            handleBatchSelect(e.dataTransfer);
+        });
+
+        function handleBatchSelect(input) {
+            if (input.files) {
+                for (let i = 0; i < input.files.length; i++) {
+                    const file = input.files[i];
+                    if (file.name.endsWith('.zip')) {
+                        batchFiles.items.add(file);
+                    }
+                }
+            }
+            renderBatchList();
+        }
+
+        function renderBatchList() {
+            const list = document.getElementById('batchFileList');
+            list.innerHTML = '';
+            for (let i = 0; i < batchFiles.files.length; i++) {
+                const li = document.createElement('li');
+                li.textContent = `📦 ${batchFiles.files[i].name}`;
+                list.appendChild(li);
+            }
+            const btn = document.getElementById('batchProcessBtn');
+            btn.disabled = batchFiles.files.length === 0;
+
+            if (batchFiles.files.length > 0) {
+                batchDropZone.classList.add('has-file');
+            }
+        }
+
+        async function startBatchProcess() {
+            const btn = document.getElementById('batchProcessBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            const formData = new FormData();
+            for (let i = 0; i < batchFiles.files.length; i++) {
+                formData.append('zip_files', batchFiles.files[i]);
+            }
+
+            try {
+                const response = await fetch('/batch_process', { method: 'POST', body: formData });
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'batch_results.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    alert("Batch processing complete! Downloading report...");
+                } else {
+                    const err = await response.json();
+                    alert("Error: " + (err.error || " Unknown error"));
+                }
+            } catch (e) {
+                alert("Network Error: " + e.message);
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+
+        // --- Standard Logic (Existing) ---
         document.querySelectorAll('.upload-card').forEach(card => {
             const input = card.querySelector('.file-input');
             const docKey = input.id.replace('file_', '');
@@ -205,8 +343,6 @@
             document.getElementById('extractBtn').disabled = count < 2;
         }
 
-        // --- Core Logic ---
-
         async function startComparison() {
             const formData = new FormData();
             let hasFiles = false;
@@ -215,33 +351,23 @@
             }
             if (!hasFiles) return;
 
-            // UI
             const btn = document.getElementById('extractBtn');
             btn.classList.add('loading');
             btn.disabled = true;
 
             try {
-                // Call the new DIRECT route
                 const response = await fetch('/compare_direct', { method: 'POST', body: formData });
-
                 if (!response.ok) {
                     throw new Error(`Server returned ${response.status}`);
                 }
-
                 const data = await response.json();
-
                 if (data.success) {
-                    // Update AI Badge
                     updateBadge(data.meta);
-
-                    // Render Results
                     renderResults(data);
-
                     showStep(2);
-
                     if (data.results.all_match) launchConfetti();
                 } else {
-                    showError(data.error || "Unknown error occurred");
+                    showError(data.error || " Unknown error occurred");
                 }
             } catch (error) {
                 console.error(error);
@@ -261,7 +387,6 @@
                 const tr = document.createElement('tr');
                 tr.style.animationDelay = `${idx * 100}ms`;
                 tr.classList.add('animate-row');
-
                 total++;
                 if (item.status === 'success') matches++;
                 else if (item.status === 'error') mismatches++;
@@ -269,7 +394,6 @@
                 const valA = item.values.doc_a || '--';
                 const valB = item.values.doc_b || '--';
                 const valC = item.values.doc_c || '--';
-
                 let icon = item.status === 'error' ? '❌' : (item.status === 'partial' ? '⚠️' : '✅');
                 if (item.status === 'error') tr.classList.add('mismatch-row');
 
@@ -299,7 +423,7 @@
 
         function updateBadge(meta) {
             const badge = document.getElementById('aiBadge');
-            badge.style.display = 'flex'; // Changed from 'block' to 'flex' to match new badge structure
+            badge.style.display = 'flex';
             document.getElementById('aiModelName').textContent = meta.model || 'Gemini AI';
             document.getElementById('aiLatency').textContent = `${meta.duration_ms}ms`;
             if (meta.usage) {
@@ -327,13 +451,11 @@
             }());
         }
 
-        // --- Navigation ---
         function showStep(s) {
             document.getElementById('uploadSection').classList.add('hidden');
             document.getElementById('resultsSection').classList.add('hidden');
             document.querySelector('.step[id="step1"]').classList.remove('active', 'completed');
             document.querySelector('.step[id="step2"]').classList.remove('active', 'completed');
-
             if (s === 1) {
                 document.getElementById('uploadSection').classList.remove('hidden');
                 document.getElementById('resetBtn').classList.add('hidden');
@@ -347,9 +469,11 @@
         }
 
         function resetApp() { location.reload(); }
+
         function showError(msg) {
             const el = document.getElementById('uploadError');
-            el.textContent = msg; el.classList.remove('hidden');
+            el.textContent = msg;
+            el.classList.remove('hidden');
             setTimeout(() => el.classList.add('hidden'), 5000);
         }
     </script>
