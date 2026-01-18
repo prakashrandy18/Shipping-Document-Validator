@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Compare shipping documents - CTN, CBM, Measurements, Gross Weight across 3 PDF documents">
+    <title>📦 Shipping Document Comparator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="background-effects">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+    </div>
+
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">📦</span>
+                <h1>Shipping Document Comparator</h1>
+            </div>
+            <p class="subtitle">Compare shipping details across three PDF documents with smart extraction</p>
+        </header>
+
+        <main class="main-content">
+            <!-- Step Indicator -->
+            <div class="step-indicator" id="stepIndicator">
+                <div class="step active" data-step="1">
+                    <span class="step-number">1</span>
+                    <span class="step-label">Upload Documents</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step" data-step="2">
+                    <span class="step-number">2</span>
+                    <span class="step-label">Review Values</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step" data-step="3">
+                    <span class="step-number">3</span>
+                    <span class="step-label">View Results</span>
+                </div>
+            </div>
+
+            <!-- Step 1: Upload Documents -->
+            <section class="upload-section" id="uploadSection">
+                <form id="uploadForm" class="upload-form">
+                    <div class="upload-cards">
+                        <!-- Document A (OBL) -->
+                        <div class="upload-card" id="dropzoneA">
+                            <div class="upload-icon">📄</div>
+                            <h3>OBL (Bill of Lading)</h3>
+                            <p class="doc-type-hint">Document A</p>
+                            <p class="upload-hint">Drag & drop or click to browse</p>
+                            <input type="file" id="docA" name="doc_a" accept=".pdf" class="file-input">
+                            <div class="file-name" id="fileNameA">No file selected</div>
+                        </div>
+
+                        <!-- Document B (PKL) -->
+                        <div class="upload-card" id="dropzoneB">
+                            <div class="upload-icon">📄</div>
+                            <h3>PKL (Packing List)</h3>
+                            <p class="doc-type-hint">Document B</p>
+                            <p class="upload-hint">Drag & drop or click to browse</p>
+                            <input type="file" id="docB" name="doc_b" accept=".pdf" class="file-input">
+                            <div class="file-name" id="fileNameB">No file selected</div>
+                        </div>
+
+                        <!-- Document C (INV) -->
+                        <div class="upload-card" id="dropzoneC">
+                            <div class="upload-icon">📄</div>
+                            <h3>INV (Invoice)</h3>
+                            <p class="doc-type-hint">Document C</p>
+                            <p class="upload-hint">Drag & drop or click to browse</p>
+                            <input type="file" id="docC" name="doc_c" accept=".pdf" class="file-input">
+                            <div class="file-name" id="fileNameC">No file selected</div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="primary-btn" id="extractBtn">
+                        <span class="btn-icon">🔍</span>
+                        <span class="btn-text">EXTRACT VALUES</span>
+                        <div class="btn-loader" id="extractLoader">
+                            <div class="spinner"></div>
+                        </div>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Step 2: Review Extracted Values -->
+            <section class="review-section hidden" id="reviewSection">
+                <div class="review-header">
+                    <h2>📋 Review Extracted Values</h2>
+                    <p class="review-hint">Verify the extracted values below. Edit any incorrect or missing values.</p>
+                </div>
+
+                <div class="review-table-container">
+                    <table class="review-table" id="reviewTable">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th id="headerA">OBL</th>
+                                <th id="headerB">PKL</th>
+                                <th id="headerC">INV</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviewTableBody">
+                            <!-- Values will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="review-actions">
+                    <button type="button" class="secondary-btn" id="backToUploadBtn">
+                        <span>← Back</span>
+                    </button>
+                    <button type="button" class="primary-btn" id="compareBtn">
+                        <span class="btn-icon">⚖️</span>
+                        <span class="btn-text">COMPARE VALUES</span>
+                        <div class="btn-loader" id="compareLoader">
+                            <div class="spinner"></div>
+                        </div>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Step 3: Comparison Results -->
+            <section class="results-section hidden" id="resultsSection">
+                <div class="results-header">
+                    <h2>📊 Comparison Results</h2>
+                    <div class="status-badge" id="statusBadge">
+                        <span class="status-icon"></span>
+                        <span class="status-text"></span>
+                    </div>
+                </div>
+
+                <div class="results-summary" id="resultsSummary">
+                    <!-- Summary cards -->
+                </div>
+
+                <div class="comparison-table-container">
+                    <table class="comparison-table" id="comparisonTable">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>OBL</th>
+                                <th>PKL</th>
+                                <th>INV</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="comparisonTableBody">
+                            <!-- Results will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="results-actions">
+                    <button type="button" class="secondary-btn" id="newComparisonBtn">
+                        <span>🔄 New Comparison</span>
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Made with ❤️ for easy document validation</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>
