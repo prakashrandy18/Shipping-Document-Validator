@@ -7,8 +7,6 @@
 # Note: tkinter is built into Python and doesn't need installation
 
 # PDF text extraction library
-# PDF text extraction library
-pdfplumber>=0.9.0
-
 # LLM Integration
 google-genai
+python-dotenv>=0.9.0
