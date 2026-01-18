@@ -10,3 +10,5 @@
 # LLM Integration
 google-genai
 python-dotenv>=0.9.0
+flask
+gunicorn
