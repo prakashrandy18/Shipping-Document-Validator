@@ -299,6 +299,7 @@ def compare_three_documents(details_a, details_b, details_c):
                 missing_docs.append('C')
             
             if missing_docs:
+                results['all_match'] = False
                 comparison = {
                     'field': label,
                     'field_key': field_key,

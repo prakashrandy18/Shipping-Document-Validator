@@ -423,7 +423,7 @@ def process_single_zip(zip_path):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(temp_extract_dir)
         
-        pdfs = glob.glob(os.path.join(temp_extract_dir, "**", "*.pdf"), recursive=True)
+        pdfs = glob.glob(os.path.join(temp_extract_dir, "**", "*.[pP][dD][fF]"), recursive=True)
         pdfs = [p for p in pdfs if not os.path.basename(p).startswith('.')]
         
         if len(pdfs) < 2:
