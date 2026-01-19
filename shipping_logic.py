@@ -141,7 +141,16 @@ def extract_shipping_details_llm(file_path):
     
     -------------------------------------
     
-    STEP 2: ANALYZE SUMMARY SECTIONS
+    -------------------------------------
+    
+    STEP 2: LOCATE GROSS WEIGHT (CRITICAL)
+    - You must find the **GROSS WEIGHT**.
+    - IGNORE "Net Weight", "N.W.", or "LBS" if "KGS" is present.
+    - LOOK FOR HEADERS: "GROSS WEIGHT", "G.W.", "TTL GROSS WT.", "GR.WT.".
+    - If you see "TTL NET WT." and "TTL GROSS WT.", YOU MUST PICK "TTL GROSS WT.".
+    - Example: Net Wt: 449.25, Gross Wt: 590.47 -> You MUST pick 590.47.
+
+    STEP 3: ANALYZE SUMMARY SECTIONS
     - Look for a separate "Summary" or "Carton Meas" table, often at the bottom left.
     - Find "CBM" or "Vol" in this summary table. **This is the Volume (e.g., 10.611).**
     
