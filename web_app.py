@@ -17,7 +17,7 @@ import csv
 import io
 from flask import Flask, render_template, request, jsonify, send_file
 from dotenv import load_dotenv
-from shipping_logic import extract_shipping_details_llm, compare_three_documents, classify_document, GENAI_AVAILABLE, GOOGLE_API_KEY
+from shipping_logic import extract_combined_shipping_details_llm, extract_shipping_details_llm, compare_three_documents, classify_document, GENAI_AVAILABLE, GOOGLE_API_KEY
 
 
 app = Flask(__name__)
@@ -31,200 +31,13 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/preview', methods=['POST'])
-def preview():
-    """
-    Extract values from uploaded PDFs (AI Only).
-    """
-    if not GENAI_AVAILABLE or not GOOGLE_API_KEY:
-        return jsonify({
-            'success': False,
-            'error': 'Google Gemini API is not configured.'
-        }), 500
-    
-    results = {}
-    temp_files = []
-    
-    try:
-        for doc_key in ['doc_a', 'doc_b', 'doc_c']:
-            if doc_key in request.files and request.files[doc_key].filename:
-                doc = request.files[doc_key]
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f'temp_{doc_key}.pdf')
-                temp_files.append(temp_path)
-                doc.save(temp_path)
-                
-                details = None
-                ai_warning = None
-
-                try:
-                    print(f"Attempting AI extraction for {doc.filename}...")
-                    details = extract_shipping_details_llm(temp_path)
-                except Exception as e:
-                    print(f"AI Extraction failed for {doc.filename}: {e}")
-                    err_str = str(e)
-                    ai_warning = f"AI Error: {err_str}"
-                    details = None
-                
-                if not details:
-                     return jsonify({
-                        'success': False,
-                        'error': ai_warning or "AI Extraction Failed"
-                     }), 500
-
-                results[doc_key] = {
-                    'filename': doc.filename,
-                    'details': details,
-                    'warning': ai_warning
-                }
-        
-        # Check we have at least 2 documents
-        uploaded_count = sum(1 for v in results.values() if v is not None)
-        if uploaded_count < 2:
-            return jsonify({
-                'success': False,
-                'error': 'Please upload at least 2 PDF documents'
-            }), 400
-        
-        return jsonify({
-            'success': True,
-            'documents': results,
-            'warning': None
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-    finally:
-        # Clean up temp files
-        for temp_file in temp_files:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
 
 
-@app.route('/compare', methods=['POST'])
-def compare():
-    """
-    Compare values across documents.
-    Accepts confirmed values from preview.
-    """
-    try:
-        # Check if this is a JSON request with confirmed values
-        if request.is_json:
-            data = request.get_json()
-            details_a = data.get('doc_a', {})
-            details_b = data.get('doc_b', {})
-            details_c = data.get('doc_c', {})
-        else:
-             return jsonify({
-                'success': False,
-                'error': 'Method not supported. Please use the UI flow.'
-            }), 400
-        
-        # Perform comparison
-        comparison_results = compare_three_documents(details_a, details_b, details_c)
-        
-        return jsonify({
-            'success': True,
-            'results': comparison_results,
-            'details': {
-                'doc_a': details_a,
-                'doc_b': details_b,
-                'doc_c': details_c
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 
-@app.route('/compare_direct', methods=['POST'])
-def compare_direct():
-    """
-    Single-step route: Uploads 3 files, extracts data with AI, AND compares them immediately.
-    """
-    uploaded_files = {
-        'doc_a': request.files.get('doc_a'),
-        'doc_b': request.files.get('doc_b'), 
-        'doc_c': request.files.get('doc_c')
-    }
-    
-    # 1. Validation
-    if not any(uploaded_files.values()):
-        return jsonify({'error': 'No files uploaded'}), 400
 
-    start_time = time.time()
-    
-    # 2. Extract Data (Parallel-ish or sequential)
-    extracted_docs = {}
-    
-    # We use a shared AI meta for the dashboard (taking the longest/last one or summing tokens)
-    # For simplicity, we'll just capture the Last detailed meta
-    final_meta = {}
-    
-    # 1. Save all files to temp paths first (Fast IO)
-    temp_paths = {}
-    for key, f in uploaded_files.items():
-        if f and f.filename:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp:
-                f.save(temp.name)
-                temp_paths[key] = temp.name
 
-    # 2. Define worker for parallel execution
-    def process_pdf(key, path):
-        try:
-            # This calls the AI (Slow)
-            details = extract_shipping_details_llm(path)
-            
-            if details:
-                meta = details.get('meta')
-                return key, {'details': details}, meta
-            else:
-                return key, {'error': 'AI returned empty result', 'details': {}}, None
-        except Exception as e:
-            print(f"Error processing {key}: {e}")
-            return key, {'error': str(e), 'details': {}}, None
 
-    # 3. Run AI in Parallel (Significant Speedup)
-    print(f"Starting parallel extraction for {len(temp_paths)} documents...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(process_pdf, k, p) for k, p in temp_paths.items()]
-        
-        for future in concurrent.futures.as_completed(futures):
-            key, result, meta = future.result()
-            extracted_docs[key] = result
-            if meta:
-                final_meta = meta # Use the last available meta for the badge
-
-    # Cleanup temp files
-    for p in temp_paths.values():
-         try:
-             if os.path.exists(p):
-                 os.remove(p)
-         except:
-             pass
-
-    # 3. Compare
-    comparison_results = compare_three_documents(
-        extracted_docs.get('doc_a', {}).get('details', {}),
-        extracted_docs.get('doc_b', {}).get('details', {}),
-        extracted_docs.get('doc_c', {}).get('details', {})
-    )
-    
-    # 4. Total Duration Update
-    total_duration = int((time.time() - start_time) * 1000)
-    final_meta['duration_ms'] = total_duration
-
-    return jsonify({
-        'success': True,
-        'documents': extracted_docs,
-        'results': comparison_results,
-        'meta': final_meta
-    })
 
 
 # --- Async Job Management ---
@@ -257,14 +70,19 @@ def process_batch_job(job_id, uploaded_files, app_instance):
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             future_to_zip = {}
             
-            # 1. Submit all Zips
+            # 1. Submit all Zips / PDFs
             for f_storage in uploaded_files:
                 # Save to disk first so threads can access
-                zip_path = os.path.join(job_temp_dir, f_storage['filename'])
-                with open(zip_path, 'wb') as zf:
+                # We need to preserve extension
+                file_path = os.path.join(job_temp_dir, f_storage['filename'])
+                with open(file_path, 'wb') as zf:
                     zf.write(f_storage['stream'].read())
                 
-                future_to_zip[executor.submit(process_single_zip, zip_path)] = f_storage['filename']
+                # Check extension
+                if file_path.lower().endswith('.pdf'):
+                     future_to_zip[executor.submit(process_combined_pdf, file_path)] = f_storage['filename']
+                else:
+                     future_to_zip[executor.submit(process_single_zip, file_path)] = f_storage['filename']
             
             # 2. Collect Results
             completed_count = 0
@@ -482,6 +300,44 @@ def process_single_zip(zip_path):
         shutil.rmtree(temp_extract_dir)
 
 
+def process_combined_pdf(pdf_path):
+    """
+    Helper to process ONE combined PDF file.
+    """
+    row = {'Zip_Filename': os.path.basename(pdf_path), 'Status': '', 'Error_Message': ''}
+    
+    try:
+        # Direct AI Logic
+        extracted_docs = extract_combined_shipping_details_llm(pdf_path)
+        
+        # Populate row values for Excel
+        for key in ['doc_a', 'doc_b', 'doc_c']:
+             details = extracted_docs.get(key, {}).get('details', {})
+             row[f'{key}_Name'] = "Combined"
+             row[f'{key}_Cartons'] = details.get('cartons', {}).get('value')
+             row[f'{key}_Weight'] = details.get('gross_weight', {}).get('value')
+             row[f'{key}_Volume'] = details.get('cbm', {}).get('value')
+
+        # Compare
+        comp_res = compare_three_documents(
+            extracted_docs.get('doc_a', {}).get('details', {}),
+            extracted_docs.get('doc_b', {}).get('details', {}),
+            extracted_docs.get('doc_c', {}).get('details', {})
+        )
+        row['Status'] = 'MATCH' if comp_res.get('all_match') else 'MISMATCH'
+        
+        for comp in comp_res.get('comparisons', []):
+                if comp['status'] != 'success':
+                    row['Error_Message'] += f"{comp['field']} {comp['status']}; "
+        
+        return [row]
+
+    except Exception as e:
+        row['Status'] = 'Error'
+        row['Error_Message'] = str(e)
+        return [row]
+
+
 @app.route('/batch_process', methods=['POST'])
 def batch_process():
     uploaded_files = request.files.getlist('zip_files')
@@ -491,7 +347,8 @@ def batch_process():
     # (Flask file objects are not thread safe if request ends, so we read them)
     files_data = []
     for f in uploaded_files:
-        if f.filename.endswith('.zip'):
+        fname = f.filename.lower()
+        if fname.endswith('.zip') or fname.endswith('.pdf'):
             # Store name and content stream
             files_data.append({
                 'filename': f.filename,

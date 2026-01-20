@@ -142,6 +142,26 @@ def extract_shipping_details_llm(file_path):
     -------------------------------------
     
     -------------------------------------
+    CRITICAL PATTERN RECOGNITION RULES (FOR LEVI'S / SUMMARY TABLES):
+
+    1. **"NUMBER OF PACKING UNITS" (Levi's Style)**:
+       - If you see the text "Outer Packing Method" and "Number Of Packing Units", the value under "Number Of Packing Units" IS THE CARTON COUNT.
+       - Example:
+         Outer Packing Method: Carton
+         Number Of Packing Units: 16
+         -> Cartons = 16.
+
+    2. **SUMMARY TABLES ("GROSS" / "VOL")**:
+       - In "PO Summary" or "Equipment Summary" tables:
+       - Column "Gross" = Gross Weight (KGS).
+       - Column "Vol" = Volume (CBM).
+       - Use these values if specific "Total Gross Weight" headers are missing.
+
+    3. **OBL "PALLET" vs "CARTON" RULE**:
+       - If the "No. of Pkgs" column says "1 PALLET" (or Skid), DO NOT return 1.
+       - You MUST look in the Description field for "STC" (Said To Contain) or "CTNS".
+       - Example: "1 PALLET ... STC 16 CTNS". -> Cartons = 16.
+    -------------------------------------
     
     STEP 2: LOCATE GROSS WEIGHT (CRITICAL)
     - You must find the **GROSS WEIGHT**.
@@ -338,3 +358,128 @@ def compare_three_documents(details_a, details_b, details_c):
         results['comparisons'].append(comparison)
     
     return results
+
+
+def extract_combined_shipping_details_llm(file_path):
+    """
+    Extract shipping details from a COMBINED PDF (containing OBL, Invoice, Packing List).
+    Uses Gemini to 'logically split' the document and extract 3 sets of data.
+    """
+    if not GENAI_AVAILABLE:
+        raise ImportError("google-genai library not available")
+    
+    if not client:
+        raise ValueError("Gemini Client not initialized. Check API Key.")
+
+    print(f"Uploading COMBINED file to Gemini: {file_path}")
+    
+    # 1. Upload
+    uploaded_file = None
+    try:
+        uploaded_file = client.files.upload(file=file_path)
+        print(f"File uploaded: {uploaded_file.name}")
+    except Exception as e:
+        raise Exception(f"Failed to upload to Gemini: {e}")
+
+    # 2. Prompt
+    prompt = """
+    You are an expert Shipping Document Analyst.
+    This PDF file contains THREE DISTINCT DOCUMENTS merged together:
+    1. Bill of Lading (OBL or Waybill)
+    2. Commercial Invoice (Inv)
+    3. Packing List (PKL or P/L)
+
+    YOUR TASK:
+    Logically identify the pages belonging to each document type and extract the following fields for EACH document:
+    - Cartons (CTN / Packages)
+    - Gross Weight (KGS)
+    - Volume (CBM)
+
+    *** CHAIN OF THOUGHT REQUIRED ***
+    For each document, you must internally:
+    1. Identify the document type.
+    2. Scan for "Total" rows in main tables.
+    3. Scan for "Summary" tables (often at the bottom).
+    4. Apply the Critical Rules below.
+
+    CRITICAL RULES - READ CAREFULLY:
+
+    1. **INVOICE SEARCH STRATEGY**:
+       - **Cartons**: Look for "Number Of Packing Units". If found, THAT IS THE CARTON COUNT.
+         - *Levi's Pattern*: "Outer Packing Method: Carton" -> "Number Of Packing Units: 16". Pick 16.
+       - **Weight**: Look for "Gross Weight", "GR.WT", or "Total Gross Weight".
+
+    2. **PACKING LIST SEARCH STRATEGY**:
+       - **Cartons**: Look for "Total Ctns", "Total Cartons".
+       - **Weight**: Check the "Totals" row or "Summary" table.
+         - **Header "Gross"**: If a column header is just "Gross" (e.g. in 'PO Summary' or 'Equipment Summary'), use the Total value from that column.
+       - **Volume**: Check for "Vol" or "CBM" or "M3".
+         - **Header "Vol"**: If a column header is just "Vol", use the Total value from that column.
+
+    3. **BILL OF LADING STRATEGY**:
+       - Usually clearly labeled "No. of Pkgs" (Cartons) and "Gross Weight".
+       - **CRITICAL**: If "No. of Pkgs" says "1 PALLET", **IGNORE IT**.
+         - Look for "STC" (Said To Contain) in the description.
+         - Text: "1 PALLET ... STC 16 CTNS". Result: 16.
+         - Text: "1 SKID ... STC 500 PCS". Result: 500 (if no other Carton count exists).
+
+    4. **GENERAL**: 
+       - If a value is missing in the main table, LOOK AT THE BOTTOM SUMMARY.
+       - Do not cross-contaminate data between documents.
+
+    OUTPUT JSON FORMAT:
+    {
+      "doc_a": { "_type": "Bill of Lading", "_thought": "Found text '...', chose X", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null },
+      "doc_b": { "_type": "Invoice",        "_thought": "Found 'Number Of Packing Units'...", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null },
+      "doc_c": { "_type": "Packing List",   "_thought": "Found 'PO Summary' table...", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null }
+    }
+    """
+
+    models_to_try = [
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite-preview-02-05',
+    ]
+
+    response = None
+    last_error = None
+    used_model = None
+
+    for model_name in models_to_try:
+        try:
+            print(f"Analyzing Combined PDF with: {model_name}")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[uploaded_file, prompt]
+            )
+            if response:
+                used_model = model_name
+                break
+        except Exception as e:
+            print(f"Model {model_name} failed: {e}")
+            last_error = e
+
+    if not response:
+        raise Exception(f"Gemini Analysis Failed: {last_error}")
+
+    try:
+        # Parse JSON
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(text)
+        
+        # Convert to App Standard Format (normalized)
+        results = {}
+        for key in ['doc_a', 'doc_b', 'doc_c']:
+            raw = data.get(key, {})
+            results[key] = {
+                'details': {
+                    'cartons': {'value': raw.get('cartons'), 'label': 'Cartons'},
+                    'gross_weight': {'value': raw.get('gross_weight'), 'label': 'Gross Weight'},
+                    'cbm': {'value': raw.get('cbm'), 'label': 'Volume'}
+                }
+            }
+        
+        return results
+
+    except Exception as e:
+        print(f"JSON Parse Error: {e} | Text: {response.text}")
+        raise Exception("Failed to parse AI response")

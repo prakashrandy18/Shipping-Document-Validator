@@ -27,95 +27,29 @@
                 <img src="{{ url_for('static', filename='img/apl_logo.png') }}" alt="APL Logistics" class="header-logo">
                 <h1 class="header-title">APL SHIPPING DOC VALIDATOR</h1>
             </div>
-            <button id="resetBtn" class="secondary-btn small-btn hidden" onclick="resetApp()">
-                <span>New Comparison</span>
-            </button>
+
         </header>
 
-        <div class="mode-switch">
-            <button class="mode-btn active" onclick="switchMode('standard')">Single Comparison</button>
-            <button class="mode-btn" onclick="switchMode('batch')">Batch Processing</button>
-        </div>
 
-        <div class="step-indicator">
-            <div class="step active" id="step1">
-                <div class="step-number">1</div>
-                <div class="step-label">Upload</div>
-            </div>
-            <div class="step-line"></div>
-            <div class="step" id="step2">
-                <div class="step-number">2</div>
-                <div class="step-label">Results</div>
-            </div>
-        </div>
 
         <main>
             <!-- STEP 1: UPLOAD (Single) -->
-            <section id="uploadSection" class="upload-section">
-                <div class="upload-form">
-                    <div class="upload-cards">
-                        <!-- Card A -->
-                        <div class="upload-card" id="card_doc_a">
-                            <input type="file" id="file_doc_a" class="file-input" accept=".pdf"
-                                onchange="handleFileSelect(this, 'doc_a')">
-                            <div class="upload-content">
-                                <div class="upload-icon">📄</div>
-                                <h3>OBL / PKL</h3>
-                                <p class="doc-type-hint">Original Bill of Lading</p>
-                            </div>
-                            <div class="file-name hidden" id="name_doc_a"></div>
-                        </div>
 
-                        <!-- Card B -->
-                        <div class="upload-card" id="card_doc_b">
-                            <input type="file" id="file_doc_b" class="file-input" accept=".pdf"
-                                onchange="handleFileSelect(this, 'doc_b')">
-                            <div class="upload-content">
-                                <div class="upload-icon">📑</div>
-                                <h3>Invoice</h3>
-                                <p class="doc-type-hint">Commercial Invoice</p>
-                            </div>
-                            <div class="file-name hidden" id="name_doc_b"></div>
-                        </div>
-
-                        <!-- Card C -->
-                        <div class="upload-card" id="card_doc_c">
-                            <input type="file" id="file_doc_c" class="file-input" accept=".pdf"
-                                onchange="handleFileSelect(this, 'doc_c')">
-                            <div class="upload-content">
-                                <div class="upload-icon">📋</div>
-                                <h3>Packing List</h3>
-                                <p class="doc-type-hint">Detail Packing List</p>
-                            </div>
-                            <div class="file-name hidden" id="name_doc_c"></div>
-                        </div>
-                    </div>
-
-                    <button id="extractBtn" class="primary-btn" onclick="startComparison()" disabled>
-                        <span class="btn-text">Extract & Compare</span>
-                        <span class="btn-icon">✨</span>
-                        <div class="btn-loader">
-                            <div class="spinner"></div>
-                        </div>
-                    </button>
-
-                    <div id="uploadError" class="error-message hidden"></div>
-                </div>
-            </section>
 
             <!-- BATCH UPLOAD SECTION -->
-            <section id="batchSection" class="batch-section hidden">
+            <!-- BATCH UPLOAD SECTION -->
+            <section id="batchSection" class="batch-section">
                 <div class="card glass-card">
                     <div class="card-header">
                         <h2>Batch Processing</h2>
-                        <p>Upload multiple ZIP files. Each ZIP should contain a set of 3 PDFs.</p>
+                        <p>Upload ZIP files (3 PDFs inside) OR Single Combined PDFs (3 docs in 1 file).</p>
                     </div>
 
                     <div class="batch-upload-area" id="batchDropZone">
-                        <input type="file" id="batchFileInput" multiple accept=".zip" class="hidden"
+                        <input type="file" id="batchFileInput" multiple accept=".zip,.pdf,.PDF" class="hidden"
                             onchange="handleBatchSelect(this)">
                         <div class="upload-icon">📦</div>
-                        <h3>Drag & Drop ZIP files here</h3>
+                        <h3>Drag & Drop ZIPs or Combined PDFs</h3>
                         <p>or click to browse</p>
                         <ul id="batchFileList" class="file-list"></ul>
                     </div>
@@ -172,98 +106,20 @@
             </section>
 
             <!-- STEP 2: RESULTS -->
-            <section id="resultsSection" class="results-section hidden">
-                <div class="results-header">
-                    <h2>Comparison Results</h2>
-                    <div id="overallStatus" class="status-badge"></div>
-                </div>
 
-                <div class="results-summary">
-                    <div class="summary-card" id="summaryTotal">
-                        <div class="number">--</div>
-                        <div class="label">Fields</div>
-                    </div>
-                    <div class="summary-card success" id="summaryMatch">
-                        <div class="number">--</div>
-                        <div class="label">Matches</div>
-                    </div>
-                    <div class="summary-card error" id="summaryMismatch">
-                        <div class="number">--</div>
-                        <div class="label">Mismatches</div>
-                    </div>
-                </div>
-
-                <div class="comparison-table-container">
-                    <table class="comparison-table">
-                        <thead>
-                            <tr>
-                                <th>Field</th>
-                                <th>OBL / PKL</th>
-                                <th>Invoice</th>
-                                <th>Packing List</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resultsTableBody">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="results-actions">
-                    <button class="primary-btn" onclick="resetApp()">Start New Comparison</button>
-                </div>
-            </section>
 
         </main>
 
         <!-- Subtle AI Badge -->
-        <div id="aiBadge" class="ai-badge">
-            <div class="ai-badge-header">
-                <span class="pulse-dot"></span>
-                <span id="aiModelName">AI Ready</span>
-            </div>
-            <div class="ai-badge-details">
-                <div class="bad-item">Latency: <span id="aiLatency">--</span></div>
-                <div class="bad-item">Tokens: <span id="aiTokens">--</span></div>
-            </div>
-        </div>
+
 
     </div>
 
     <script>
         // State
-        let uploadedFiles = { doc_a: null, doc_b: null, doc_c: null };
+        // State
+        // removed standard mode logic
 
-        // --- Tab / Mode Switching ---
-        function switchMode(mode) {
-            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.mode-btn').forEach(el => el.classList.remove('active'));
-
-            if (mode === 'standard') {
-                document.getElementById('uploadSection').classList.remove('hidden');
-                document.getElementById('batchSection').classList.add('hidden');
-                document.getElementById('resultsSection').classList.add('hidden');
-                document.getElementById('step1').classList.add('active');
-
-                // Update buttons
-                document.querySelector('button[onclick="switchMode(\'standard\')"]').classList.add('active');
-            } else {
-                document.getElementById('uploadSection').classList.add('hidden');
-                document.getElementById('batchSection').classList.remove('hidden');
-                document.getElementById('resultsSection').classList.add('hidden');
-                document.getElementById('step1').classList.add('active');
-                document.getElementById('step2').classList.remove('active');
-
-                // Update buttons
-                document.querySelector('button[onclick="switchMode(\'batch\')"]').classList.add('active');
-            }
-        }
-
-        // Default to Batch Mode on Load
-        window.addEventListener('DOMContentLoaded', () => {
-            switchMode('batch');
-        });
 
         // --- Batch Logic ---
         const batchFiles = new DataTransfer();
@@ -283,7 +139,7 @@
             if (input.files) {
                 for (let i = 0; i < input.files.length; i++) {
                     const file = input.files[i];
-                    if (file.name.endsWith('.zip')) {
+                    if (file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.pdf')) {
                         batchFiles.items.add(file);
                     }
                 }
@@ -434,179 +290,7 @@
 
 
         // --- Standard Logic (Existing) ---
-        document.querySelectorAll('.upload-card').forEach(card => {
-            const input = card.querySelector('.file-input');
-            const docKey = input.id.replace('file_', '');
 
-            card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('dragover'); });
-            card.addEventListener('dragleave', () => { card.classList.remove('dragover'); });
-            card.addEventListener('drop', (e) => {
-                e.preventDefault();
-                card.classList.remove('dragover');
-                if (e.dataTransfer.files.length > 0) {
-                    input.files = e.dataTransfer.files;
-                    handleFileSelect(input, docKey);
-                }
-            });
-            // Click is handled by input covering the card
-        });
-
-        function handleFileSelect(input, docKey) {
-            if (input.files && input.files[0]) {
-                const file = input.files[0];
-                if (file.type !== 'application/pdf') {
-                    alert('PDF only!'); input.value = ''; return;
-                }
-                uploadedFiles[docKey] = file;
-
-                const card = document.getElementById(`card_${docKey}`);
-                card.classList.add('has-file');
-                card.querySelector('.upload-icon').textContent = '✅';
-                document.getElementById(`name_${docKey}`).textContent = file.name;
-                document.getElementById(`name_${docKey}`).classList.remove('hidden');
-
-                checkUploadReadiness();
-            }
-        }
-
-        function checkUploadReadiness() {
-            const count = Object.values(uploadedFiles).filter(f => f !== null).length;
-            document.getElementById('extractBtn').disabled = count < 2;
-        }
-
-        async function startComparison() {
-            const formData = new FormData();
-            let hasFiles = false;
-            for (const [key, file] of Object.entries(uploadedFiles)) {
-                if (file) { formData.append(key, file); hasFiles = true; }
-            }
-            if (!hasFiles) return;
-
-            const btn = document.getElementById('extractBtn');
-            btn.classList.add('loading');
-            btn.disabled = true;
-
-            try {
-                const response = await fetch('/compare_direct', { method: 'POST', body: formData });
-                if (!response.ok) {
-                    throw new Error(`Server returned ${response.status}`);
-                }
-                const data = await response.json();
-                if (data.success) {
-                    updateBadge(data.meta);
-                    renderResults(data);
-                    showStep(2);
-                    if (data.results.all_match) launchConfetti();
-                } else {
-                    showError(data.error || " Unknown error occurred");
-                }
-            } catch (error) {
-                console.error(error);
-                showError(`Error: ${error.message}. Please try again.`);
-            } finally {
-                btn.classList.remove('loading');
-                btn.disabled = false;
-            }
-        }
-
-        function renderResults(data) {
-            const tbody = document.getElementById('resultsTableBody');
-            tbody.innerHTML = '';
-            let matches = 0, mismatches = 0, total = 0;
-
-            data.results.comparisons.forEach((item, idx) => {
-                const tr = document.createElement('tr');
-                tr.style.animationDelay = `${idx * 100}ms`;
-                tr.classList.add('animate-row');
-                total++;
-                if (item.status === 'success') matches++;
-                else if (item.status === 'error') mismatches++;
-
-                const valA = item.values.doc_a || '--';
-                const valB = item.values.doc_b || '--';
-                const valC = item.values.doc_c || '--';
-                let icon = item.status === 'error' ? '❌' : (item.status === 'partial' ? '⚠️' : '✅');
-                if (item.status === 'error') tr.classList.add('mismatch-row');
-
-                tr.innerHTML = `
-                    <td class="field-name">${item.field}</td>
-                    <td class="value">${valA}</td>
-                    <td class="value">${valB}</td>
-                    <td class="value">${valC}</td>
-                    <td class="status"><span class="status-icon">${icon}</span></td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            document.getElementById('summaryTotal').querySelector('.number').textContent = total;
-            document.getElementById('summaryMatch').querySelector('.number').textContent = matches;
-            document.getElementById('summaryMismatch').querySelector('.number').textContent = mismatches;
-
-            const badge = document.getElementById('overallStatus');
-            if (data.results.all_match) {
-                badge.className = 'status-badge success';
-                badge.innerHTML = `<span>✅ All Match</span>`;
-            } else {
-                badge.className = 'status-badge error';
-                badge.innerHTML = `<span>❌ Mismatches</span>`;
-            }
-        }
-
-        function updateBadge(meta) {
-            const badge = document.getElementById('aiBadge');
-            badge.style.display = 'flex';
-            document.getElementById('aiModelName').textContent = meta.model || 'Gemini AI';
-            document.getElementById('aiLatency').textContent = `${meta.duration_ms}ms`;
-            if (meta.usage) {
-                document.getElementById('aiTokens').textContent = meta.usage.total_tokens || '--';
-            }
-        }
-
-        function launchConfetti() {
-            var duration = 3000;
-            var end = Date.now() + duration;
-            (function frame() {
-                confetti({
-                    particleCount: 2,
-                    angle: 60,
-                    spread: 55,
-                    origin: { x: 0 }
-                });
-                confetti({
-                    particleCount: 2,
-                    angle: 120,
-                    spread: 55,
-                    origin: { x: 1 }
-                });
-                if (Date.now() < end) requestAnimationFrame(frame);
-            }());
-        }
-
-        function showStep(s) {
-            document.getElementById('uploadSection').classList.add('hidden');
-            document.getElementById('resultsSection').classList.add('hidden');
-            document.querySelector('.step[id="step1"]').classList.remove('active', 'completed');
-            document.querySelector('.step[id="step2"]').classList.remove('active', 'completed');
-            if (s === 1) {
-                document.getElementById('uploadSection').classList.remove('hidden');
-                document.getElementById('resetBtn').classList.add('hidden');
-                document.querySelector('.step[id="step1"]').classList.add('active');
-            } else {
-                document.getElementById('resultsSection').classList.remove('hidden');
-                document.getElementById('resetBtn').classList.remove('hidden');
-                document.querySelector('.step[id="step1"]').classList.add('completed');
-                document.querySelector('.step[id="step2"]').classList.add('active');
-            }
-        }
-
-        function resetApp() { location.reload(); }
-
-        function showError(msg) {
-            const el = document.getElementById('uploadError');
-            el.textContent = msg;
-            el.classList.remove('hidden');
-            setTimeout(() => el.classList.add('hidden'), 5000);
-        }
     </script>
 </body>
 
