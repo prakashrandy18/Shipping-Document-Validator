@@ -213,8 +213,8 @@
                         // Show Results Summary
                         renderBatchResults(statusData.results, jobId);
 
-                        // Auto-Download
-                        downloadBatchReport();
+                        // Auto-Download removed as per user request
+                        // downloadBatchReport();
                     } else if (statusData.status === 'failed') {
                         throw new Error(statusData.error || "Job failed");
                     }

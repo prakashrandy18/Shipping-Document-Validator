@@ -32,12 +32,12 @@ def classify_document(filename):
     if name.startswith(('obl', 'bl')): return 'doc_a'
     
     # 3. Packing List (doc_c)
-    if name.startswith(('pl', 'plist')): return 'doc_c'
+    if name.startswith(('pl', 'plist', 'packing', 'pack')): return 'doc_c'
     
     # -- Loose Contains Checks (Lower Priority) --
     if 'inv' in name or 'invoice' in name: return 'doc_b'
-    if 'bl' in name: return 'doc_a'
-    if 'pl' in name or 'plist' in name: return 'doc_c'
+    if 'bl' in name or 'obl' in name: return 'doc_a'
+    if 'pl' in name or 'plist' in name or 'packing' in name: return 'doc_c'
     
     return None
 
