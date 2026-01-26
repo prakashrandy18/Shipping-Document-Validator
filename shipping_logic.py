@@ -178,6 +178,7 @@ def extract_shipping_details_llm(file_path):
     REQUIRED OUTPUT (JSON ONLY):
     {{
       "_analysis": "Explain why you chose value X over Y. Mention if you saw 'Total PCS' vs 'Total CTNS'.",
+      "bl_number": "String or null (The Bill of Lading Number / Waybill Number)",
       "assort_quantity": Number or null (Ignored, but note if confusing),
       "cartons": Number or null (The CARTON count. Do NOT pick PCS),
       "gross_weight": Number or null,
@@ -256,6 +257,10 @@ def extract_shipping_details_llm(file_path):
                 'usage': usage
             }
         }
+        
+        # BL Number (New)
+        if data.get('bl_number'):
+            results['bl_number'] = str(data.get('bl_number')).strip()
         
         results['cartons'] = {
             'label': 'Cartons (CTN)',
@@ -394,6 +399,7 @@ def extract_combined_shipping_details_llm(file_path):
     - Cartons (CTN / Packages)
     - Gross Weight (KGS)
     - Volume (CBM)
+    - **Document Number** (Specifically BL Number for the BL)
 
     *** CHAIN OF THOUGHT REQUIRED ***
     For each document, you must internally:
@@ -429,7 +435,7 @@ def extract_combined_shipping_details_llm(file_path):
 
     OUTPUT JSON FORMAT:
     {
-      "doc_a": { "_type": "Bill of Lading", "_thought": "Found text '...', chose X", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null },
+      "doc_a": { "_type": "Bill of Lading", "_thought": "Found text '...', chose X", "bl_number": "String/null", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null },
       "doc_b": { "_type": "Invoice",        "_thought": "Found 'Number Of Packing Units'...", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null },
       "doc_c": { "_type": "Packing List",   "_thought": "Found 'PO Summary' table...", "cartons": Number/null, "gross_weight": Number/null, "cbm": Number/null }
     }
@@ -470,6 +476,9 @@ def extract_combined_shipping_details_llm(file_path):
         results = {}
         for key in ['doc_a', 'doc_b', 'doc_c']:
             raw = data.get(key, {})
+            # Extract BL Number if it's doc_a
+            bl_num = raw.get('bl_number') if key == 'doc_a' else None
+            
             results[key] = {
                 'details': {
                     'cartons': {'value': raw.get('cartons'), 'label': 'Cartons'},
@@ -477,6 +486,8 @@ def extract_combined_shipping_details_llm(file_path):
                     'cbm': {'value': raw.get('cbm'), 'label': 'Volume'}
                 }
             }
+            if bl_num:
+                results[key]['details']['bl_number'] = str(bl_num).strip()
         
         return results
 

@@ -13,6 +13,10 @@ from shipping_logic import extract_shipping_details_llm, compare_three_documents
 def run_batch_process():
     # ... (Setup code stays same) ...
     # ... (After finding PDFs) ...
+    
+    # Ensure Renamed BLs output dir
+    renamed_bls_dir = os.path.join(os.getcwd(), "renamed_bls")
+    os.makedirs(renamed_bls_dir, exist_ok=True)
 
             # Smart Sort PDFs into slots
             assigned_docs = {'doc_a': None, 'doc_b': None, 'doc_c': None}
@@ -65,6 +69,18 @@ def run_batch_process():
                          row[f'{key}_Cartons'] = details.get('cartons', {}).get('value')
                          row[f'{key}_Weight'] = details.get('gross_weight', {}).get('value')
                          row[f'{key}_Volume'] = details.get('cbm', {}).get('value')
+
+                         # CLI Renaming Logic
+                         if key == 'doc_a' and details.get('bl_number'):
+                             try:
+                                bl_num = "".join(c for c in details.get('bl_number') if c.isalnum() or c in ('-','_'))
+                                if bl_num:
+                                    ext = os.path.splitext(pdf_file)[1]
+                                    new_name = f"{bl_num}{ext}"
+                                    shutil.copy2(pdf_file, os.path.join(renamed_bls_dir, new_name))
+                                    print(f"    -> Saved renamed BL: {new_name}")
+                             except Exception as e:
+                                 print(f"    Failed to rename BL: {e}")
 
                     # Rate Limit Delay
                     time.sleep(API_DELAY_SECONDS)

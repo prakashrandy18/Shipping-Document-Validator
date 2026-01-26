@@ -78,6 +78,10 @@
                             <button class="secondary-btn small-btn" onclick="downloadBatchReport()">
                                 <span>Download Excel Report</span>
                             </button>
+                            <button class="secondary-btn small-btn" onclick="downloadBatchBLs()"
+                                style="margin-left: 10px; background: #4F46E5; color: white;">
+                                <span>Download Renamed BLs</span>
+                            </button>
                         </div>
 
                         <div class="batch-table-wrapper">
@@ -208,6 +212,9 @@
 
                         // Show Results Summary
                         renderBatchResults(statusData.results, jobId);
+
+                        // Auto-Download
+                        downloadBatchReport();
                     } else if (statusData.status === 'failed') {
                         throw new Error(statusData.error || "Job failed");
                     }
@@ -269,6 +276,12 @@
         function downloadBatchReport() {
             if (currentJobId) {
                 window.location.href = `/batch_download/${currentJobId}`;
+            }
+        }
+
+        function downloadBatchBLs() {
+            if (currentJobId) {
+                window.location.href = `/batch_download_bls/${currentJobId}`;
             }
         }
 

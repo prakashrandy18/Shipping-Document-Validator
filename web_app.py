@@ -64,6 +64,10 @@ def process_batch_job(job_id, uploaded_files, app_instance):
     # Create temp dir for this job
     job_temp_dir = tempfile.mkdtemp()
     
+    # Create dir for Renamed BLs
+    renamed_bls_dir = os.path.join(job_temp_dir, "Renamed_BLs")
+    os.makedirs(renamed_bls_dir, exist_ok=True)
+    
     try:
         # We can process ZIPs in parallel too! 
         # But to be safe with rate limits, let's do 3 concurrent ZIPs max.
@@ -80,9 +84,9 @@ def process_batch_job(job_id, uploaded_files, app_instance):
                 
                 # Check extension
                 if file_path.lower().endswith('.pdf'):
-                     future_to_zip[executor.submit(process_combined_pdf, file_path)] = f_storage['filename']
+                     future_to_zip[executor.submit(process_combined_pdf, file_path, renamed_bls_dir)] = f_storage['filename']
                 else:
-                     future_to_zip[executor.submit(process_single_zip, file_path)] = f_storage['filename']
+                     future_to_zip[executor.submit(process_single_zip, file_path, renamed_bls_dir)] = f_storage['filename']
             
             # 2. Collect Results
             completed_count = 0
@@ -219,6 +223,16 @@ def process_batch_job(job_id, uploaded_files, app_instance):
         output.seek(0)
 
         # Store Result
+        # Zip the Renamed BLs folder
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for root, dirs, files in os.walk(renamed_bls_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, renamed_bls_dir)
+                    zip_file.write(file_path, arcname)
+        
+        JOBS[job_id]['bl_zip_data'] = zip_buffer.getvalue()
         JOBS[job_id]['xlsx_data'] = output.getvalue()
         JOBS[job_id]['results'] = results  # Store detailed results for UI
         JOBS[job_id]['status'] = 'completed'
@@ -230,10 +244,11 @@ def process_batch_job(job_id, uploaded_files, app_instance):
     finally:
         shutil.rmtree(job_temp_dir)
 
-def process_single_zip(zip_path):
+def process_single_zip(zip_path, renamed_bls_dir=None):
     """
     Helper to process ONE zip file. Returns a list of result rows (usually 1).
     """
+    start_time = time.time()
     row = {'Zip_Filename': os.path.basename(zip_path), 'Status': '', 'Error_Message': ''}
     temp_extract_dir = tempfile.mkdtemp()
     
@@ -263,21 +278,37 @@ def process_single_zip(zip_path):
                 assigned_docs[key] = remaining_pdfs.pop(0)
 
         extracted_docs = {}
-        # Extract Loop
-        for key in ['doc_a', 'doc_b', 'doc_c']:
-            pdf_file = assigned_docs.get(key)
-            if not pdf_file: continue
+        # Parallel Extraction Loop
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_key = {}
+            for key in ['doc_a', 'doc_b', 'doc_c']:
+                pdf_file = assigned_docs.get(key)
+                if pdf_file:
+                    future_to_key[executor.submit(extract_shipping_details_llm, pdf_file)] = (key, pdf_file)
             
-            row[f'{key}_Name'] = os.path.basename(pdf_file)
-            try:
-                details = extract_shipping_details_llm(pdf_file)
-                extracted_docs[key] = {'details': details}
-                if details:
+            for future in concurrent.futures.as_completed(future_to_key):
+                key, pdf_file = future_to_key[future]
+                row[f'{key}_Name'] = os.path.basename(pdf_file)
+                try:
+                    details = future.result()
+                    extracted_docs[key] = {'details': details}
+                    if details:
                         row[f'{key}_Cartons'] = details.get('cartons', {}).get('value')
                         row[f'{key}_Weight'] = details.get('gross_weight', {}).get('value')
                         row[f'{key}_Volume'] = details.get('cbm', {}).get('value')
-            except Exception as e:
-                row['Error_Message'] += f"[{key} Err: {str(e)}] "
+                        
+                        # Logic to rename BL file
+                        if key == 'doc_a' and renamed_bls_dir and details.get('bl_number'):
+                            try:
+                                bl_num = "".join(c for c in details.get('bl_number') if c.isalnum() or c in ('-','_'))
+                                if bl_num:
+                                    ext = os.path.splitext(pdf_file)[1]
+                                    new_name = f"{bl_num}{ext}"
+                                    shutil.copy2(pdf_file, os.path.join(renamed_bls_dir, new_name))
+                            except Exception as e:
+                                print(f"Failed to rename BL: {e}")
+                except Exception as e:
+                    row['Error_Message'] += f"[{key} Err: {str(e)}] "
         
         # Compare
         comp_res = compare_three_documents(
@@ -295,15 +326,19 @@ def process_single_zip(zip_path):
     except Exception as e:
         row['Status'] = 'Error'
         row['Error_Message'] = str(e)
+        row['Duration_Seconds'] = round(time.time() - start_time, 2)
         return [row]
     finally:
         shutil.rmtree(temp_extract_dir)
+        if 'Duration_Seconds' not in row:
+             row['Duration_Seconds'] = round(time.time() - start_time, 2)
 
 
-def process_combined_pdf(pdf_path):
+def process_combined_pdf(pdf_path, renamed_bls_dir=None):
     """
     Helper to process ONE combined PDF file.
     """
+    start_time = time.time()
     row = {'Zip_Filename': os.path.basename(pdf_path), 'Status': '', 'Error_Message': ''}
     
     try:
@@ -330,11 +365,13 @@ def process_combined_pdf(pdf_path):
                 if comp['status'] != 'success':
                     row['Error_Message'] += f"{comp['field']} {comp['status']}; "
         
+        row['Duration_Seconds'] = round(time.time() - start_time, 2)
         return [row]
 
     except Exception as e:
         row['Status'] = 'Error'
         row['Error_Message'] = str(e)
+        row['Duration_Seconds'] = round(time.time() - start_time, 2)
         return [row]
 
 
@@ -374,6 +411,7 @@ def batch_status(job_id):
     job_response = job.copy()
     job_response.pop('csv_data', None)
     job_response.pop('xlsx_data', None)
+    job_response.pop('bl_zip_data', None)
     
     return jsonify(job_response)
 
@@ -405,6 +443,24 @@ def batch_download(job_id):
         )
     
     return jsonify({'error': 'No report data'}), 404
+
+
+@app.route('/batch_download_bls/<job_id>', methods=['GET'])
+def batch_download_bls(job_id):
+    job = JOBS.get(job_id)
+    if not job or job['status'] != 'completed': return jsonify({'error': 'Not ready'}), 400
+    
+    if 'bl_zip_data' in job:
+        mem = io.BytesIO(job['bl_zip_data'])
+        mem.seek(0)
+        return send_file(
+            mem,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='renamed_bls.zip'
+        )
+    
+    return jsonify({'error': 'No BL zip data found'}), 404
 
 
 if __name__ == '__main__':
