@@ -64,6 +64,34 @@ FIELD_CONFIG = {
     },
 }
 
+import random
+
+def generate_content_with_retry(client, model, contents, retries=3, base_delay=2):
+    """
+    Wrapper for Gemini API call with exponential backoff for 429/5xx errors.
+    """
+    last_exception = None
+    for i in range(retries + 1):
+        try:
+            return client.models.generate_content(model=model, contents=contents)
+        except Exception as e:
+            last_exception = e
+            error_str = str(e)
+            # Check for transient errors
+            is_transient = "429" in error_str or "Quota" in error_str or "500" in error_str or "503" in error_str or "Resource exhausted" in error_str
+            
+            if is_transient and i < retries:
+                sleep_time = base_delay * (2 ** i) + random.uniform(0, 1)
+                print(f"API Error ({e}). Retrying in {sleep_time:.2f}s...")
+                time.sleep(sleep_time)
+                continue
+            
+            # If not transient or out of retries, raise
+            if not is_transient:
+                raise e
+    
+    raise last_exception or Exception("Retries exhausted")
+
 
 def load_rules(filename):
     """
@@ -200,7 +228,8 @@ def extract_shipping_details_llm(file_path):
     for model_name in models_to_try:
         try:
             print(f"Analyzing with model: {model_name}")
-            response = client.models.generate_content(
+            response = generate_content_with_retry(
+                client,
                 model=model_name,
                 contents=[uploaded_file, prompt]
             )
@@ -453,7 +482,8 @@ def extract_combined_shipping_details_llm(file_path):
     for model_name in models_to_try:
         try:
             print(f"Analyzing Combined PDF with: {model_name}")
-            response = client.models.generate_content(
+            response = generate_content_with_retry(
+                client,
                 model=model_name,
                 contents=[uploaded_file, prompt]
             )

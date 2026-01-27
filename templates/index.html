@@ -1,261 +1,301 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shipping Document Validator AI</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/apl_logo.png') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='img/apl_logo.png') }}"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <!-- Confetti Library -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-</head>
+  </head>
 
-<body>
-
+  <body>
     <div class="background-effects">
-        <div class="gradient-orb orb-1"></div>
-        <div class="gradient-orb orb-2"></div>
-        <div class="gradient-orb orb-3"></div>
+      <div class="gradient-orb orb-1"></div>
+      <div class="gradient-orb orb-2"></div>
+      <div class="gradient-orb orb-3"></div>
     </div>
 
     <div class="container">
+      <header class="compact-header">
+        <div class="brand-section">
+          <img
+            src="{{ url_for('static', filename='img/apl_logo.png') }}"
+            alt="APL Logistics"
+            class="header-logo"
+          />
+          <h1 class="header-title">APL SHIPPING DOC VALIDATOR</h1>
+        </div>
+      </header>
 
-        <header class="compact-header">
-            <div class="brand-section">
-                <img src="{{ url_for('static', filename='img/apl_logo.png') }}" alt="APL Logistics" class="header-logo">
-                <h1 class="header-title">APL SHIPPING DOC VALIDATOR</h1>
+      <main>
+        <!-- STEP 1: UPLOAD (Single) -->
+
+        <!-- BATCH UPLOAD SECTION -->
+        <!-- BATCH UPLOAD SECTION -->
+        <section id="batchSection" class="batch-section">
+          <div class="card glass-card">
+            <div class="card-header">
+              <h2>Batch Processing</h2>
+              <p>
+                Upload ZIP files (3 PDFs inside) OR Single Combined PDFs (3 docs
+                in 1 file).
+              </p>
             </div>
 
-        </header>
+            <div class="batch-upload-area" id="batchDropZone">
+              <input
+                type="file"
+                id="batchFileInput"
+                multiple
+                accept=".zip,.pdf,.PDF"
+                class="hidden"
+                onchange="handleBatchSelect(this)"
+              />
+              <div class="upload-icon">📦</div>
+              <h3>Drag & Drop ZIPs or Combined PDFs</h3>
+              <p>or click to browse</p>
+              <ul id="batchFileList" class="file-list"></ul>
+            </div>
 
+            <!-- Progress Section -->
+            <div id="batchProgressContainer" class="progress-container hidden">
+              <div class="progress-label">
+                <span id="progressText">Processing... 0%</span>
+                <span class="spinner-small"></span>
+              </div>
+              <div class="progress-track">
+                <div
+                  id="progressBar"
+                  class="progress-fill"
+                  style="width: 0%"
+                ></div>
+              </div>
+            </div>
 
+            <div class="card-footer">
+              <button
+                id="batchProcessBtn"
+                class="primary-btn"
+                onclick="startBatchProcess()"
+                disabled
+              >
+                <span>Start Batch Processing</span>
+              </button>
+            </div>
 
-        <main>
-            <!-- STEP 1: UPLOAD (Single) -->
-
-
-            <!-- BATCH UPLOAD SECTION -->
-            <!-- BATCH UPLOAD SECTION -->
-            <section id="batchSection" class="batch-section">
-                <div class="card glass-card">
-                    <div class="card-header">
-                        <h2>Batch Processing</h2>
-                        <p>Upload ZIP files (3 PDFs inside) OR Single Combined PDFs (3 docs in 1 file).</p>
-                    </div>
-
-                    <div class="batch-upload-area" id="batchDropZone">
-                        <input type="file" id="batchFileInput" multiple accept=".zip,.pdf,.PDF" class="hidden"
-                            onchange="handleBatchSelect(this)">
-                        <div class="upload-icon">📦</div>
-                        <h3>Drag & Drop ZIPs or Combined PDFs</h3>
-                        <p>or click to browse</p>
-                        <ul id="batchFileList" class="file-list"></ul>
-                    </div>
-
-
-
-                    <!-- Progress Section -->
-                    <div id="batchProgressContainer" class="progress-container hidden">
-                        <div class="progress-label">
-                            <span id="progressText">Processing... 0%</span>
-                            <span class="spinner-small"></span>
-                        </div>
-                        <div class="progress-track">
-                            <div id="progressBar" class="progress-fill" style="width: 0%"></div>
-                        </div>
-                    </div>
-
-                    <button id="batchProcessBtn" class="primary-btn" onclick="startBatchProcess()" disabled>
-                        <span>Start Batch Processing</span>
+            <!-- Batch Results Summary -->
+            <div id="batchResultsContainer" class="batch-results hidden">
+              <div class="results-header">
+                <h3>Batch Summary</h3>
+                <div class="results-actions-group">
+                    <button class="secondary-btn small-btn" onclick="downloadBatchReport()">
+                    <span>Download Excel</span>
                     </button>
-
-                    <!-- Batch Results Summary -->
-                    <div id="batchResultsContainer" class="batch-results hidden">
-                        <div class="results-header">
-                            <h3>Batch Summary</h3>
-                            <button class="secondary-btn small-btn" onclick="downloadBatchReport()">
-                                <span>Download Excel Report</span>
-                            </button>
-                            <button class="secondary-btn small-btn" onclick="downloadBatchBLs()"
-                                style="margin-left: 10px; background: #4F46E5; color: white;">
-                                <span>Download Renamed BLs</span>
-                            </button>
-                        </div>
-
-                        <div class="batch-table-wrapper">
-                            <table class="batch-table">
-                                <thead>
-                                    <tr>
-                                        <th>ZIP File</th>
-                                        <th>Status</th>
-                                        <th>Details</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="batchTableBody">
-                                    <!-- Populated by JS -->
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="batch-actions-footer">
-                            <button class="primary-btn" onclick="resetBatch()">
-                                <span>Start New Batch</span>
-                            </button>
-                        </div>
-                    </div>
-
+                    <button class="secondary-btn small-btn" onclick="downloadBatchBLs()" style="background: #4f46e5; color: white">
+                    <span>Download BLs</span>
+                    </button>
+                    <button class="primary-btn small-btn" onclick="resetBatch()" style="background: var(--success); border-color: var(--success);">
+                    <span>Start New Batch</span>
+                    </button>
                 </div>
-            </section>
+              </div>
 
-            <!-- STEP 2: RESULTS -->
+              <div class="batch-table-wrapper">
+                <table class="batch-table">
+                  <thead>
+                    <tr>
+                      <th>ZIP File</th>
+                      <th>Status</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batchTableBody">
+                    <!-- Populated by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
 
+        <!-- STEP 2: RESULTS -->
+      </main>
 
-        </main>
-
-        <!-- Subtle AI Badge -->
-
-
+      <!-- Subtle AI Badge -->
     </div>
 
     <script>
-        // State
-        // State
-        // removed standard mode logic
+      // State
+      // State
+      // removed standard mode logic
 
+      // --- Batch Logic ---
+      const batchFiles = new DataTransfer();
+      const batchDropZone = document.getElementById("batchDropZone");
+      const batchInput = document.getElementById("batchFileInput");
 
-        // --- Batch Logic ---
-        const batchFiles = new DataTransfer();
-        const batchDropZone = document.getElementById('batchDropZone');
-        const batchInput = document.getElementById('batchFileInput');
+      batchDropZone.addEventListener("click", () => batchInput.click());
+      batchDropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        batchDropZone.classList.add("dragover");
+      });
+      batchDropZone.addEventListener("dragleave", () => {
+        batchDropZone.classList.remove("dragover");
+      });
+      batchDropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        batchDropZone.classList.remove("dragover");
+        handleBatchSelect(e.dataTransfer);
+      });
 
-        batchDropZone.addEventListener('click', () => batchInput.click());
-        batchDropZone.addEventListener('dragover', (e) => { e.preventDefault(); batchDropZone.classList.add('dragover'); });
-        batchDropZone.addEventListener('dragleave', () => { batchDropZone.classList.remove('dragover'); });
-        batchDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            batchDropZone.classList.remove('dragover');
-            handleBatchSelect(e.dataTransfer);
-        });
-
-        function handleBatchSelect(input) {
-            if (input.files) {
-                for (let i = 0; i < input.files.length; i++) {
-                    const file = input.files[i];
-                    if (file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.pdf')) {
-                        batchFiles.items.add(file);
-                    }
-                }
+      function handleBatchSelect(input) {
+        if (input.files) {
+          for (let i = 0; i < input.files.length; i++) {
+            const file = input.files[i];
+            if (
+              file.name.toLowerCase().endsWith(".zip") ||
+              file.name.toLowerCase().endsWith(".pdf")
+            ) {
+              batchFiles.items.add(file);
             }
-            renderBatchList();
+          }
+        }
+        renderBatchList();
+      }
+
+      function renderBatchList() {
+        const list = document.getElementById("batchFileList");
+        list.innerHTML = "";
+        for (let i = 0; i < batchFiles.files.length; i++) {
+          const li = document.createElement("li");
+          li.textContent = `📦 ${batchFiles.files[i].name}`;
+          list.appendChild(li);
+        }
+        const btn = document.getElementById("batchProcessBtn");
+        btn.disabled = batchFiles.files.length === 0;
+
+        if (batchFiles.files.length > 0) {
+          batchDropZone.classList.add("has-file");
+        }
+      }
+
+      async function startBatchProcess() {
+        const btn = document.getElementById("batchProcessBtn");
+        const progressContainer = document.getElementById(
+          "batchProgressContainer",
+        );
+        const progressBar = document.getElementById("progressBar");
+        const progressText = document.getElementById("progressText");
+
+        btn.disabled = true;
+        btn.classList.add("hidden"); // Hide button while processing
+        progressContainer.classList.remove("hidden");
+        progressBar.style.width = "0%";
+        progressText.textContent = "Starting...";
+
+        const formData = new FormData();
+        for (let i = 0; i < batchFiles.files.length; i++) {
+          formData.append("zip_files", batchFiles.files[i]);
         }
 
-        function renderBatchList() {
-            const list = document.getElementById('batchFileList');
-            list.innerHTML = '';
-            for (let i = 0; i < batchFiles.files.length; i++) {
-                const li = document.createElement('li');
-                li.textContent = `📦 ${batchFiles.files[i].name}`;
-                list.appendChild(li);
-            }
-            const btn = document.getElementById('batchProcessBtn');
-            btn.disabled = batchFiles.files.length === 0;
+        try {
+          // 1. Submit Job
+          const response = await fetch("/batch_process", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await response.json();
 
-            if (batchFiles.files.length > 0) {
-                batchDropZone.classList.add('has-file');
+          if (!response.ok) throw new Error(data.error || "Failed to start");
+
+          const jobId = data.job_id;
+
+          // 2. Poll Status
+          let complete = false;
+          while (!complete) {
+            await new Promise((r) => setTimeout(r, 1000)); // Wait 1 sec
+
+            const statusRes = await fetch(`/batch_status/${jobId}`);
+            const statusData = await statusRes.json();
+
+            if (
+              statusData.status === "processing" ||
+              statusData.status === "queued"
+            ) {
+              const pct = statusData.progress || 0;
+              progressBar.style.width = `${pct}%`;
+              progressText.textContent = `Processing... ${pct}%`;
+            } else if (statusData.status === "completed") {
+              progressBar.style.width = "100%";
+              progressText.textContent = "Completed!";
+              complete = true;
+
+              // Show Results Summary
+              renderBatchResults(statusData.results, jobId);
+
+              // Auto-Download removed as per user request
+              // downloadBatchReport();
+            } else if (statusData.status === "failed") {
+              throw new Error(statusData.error || "Job failed");
             }
+          }
+        } catch (e) {
+          alert("Error: " + e.message);
+          progressText.textContent = "Error occurred";
+          progressContainer.classList.add("error");
+        } finally {
+          btn.disabled = false;
+          // btn.classList.remove('hidden'); // Keep hidden if we showed results
         }
+      }
 
-        async function startBatchProcess() {
-            const btn = document.getElementById('batchProcessBtn');
-            const progressContainer = document.getElementById('batchProgressContainer');
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
+      let currentJobId = null;
 
-            btn.disabled = true;
-            btn.classList.add('hidden'); // Hide button while processing
-            progressContainer.classList.remove('hidden');
-            progressBar.style.width = '0%';
-            progressText.textContent = 'Starting...';
+      function renderBatchResults(results, jobId) {
+        currentJobId = jobId;
+        document.getElementById("batchProgressContainer").classList.add("hidden");
+        
+        // Hide Upload Zone & Footer specifically to give space for results
+        document.getElementById("batchDropZone").classList.add("hidden");
+        document.querySelector(".card-footer").classList.add("hidden");
+        
+        // Show Results
+        document.getElementById("batchResultsContainer").classList.remove("hidden");
 
-            const formData = new FormData();
-            for (let i = 0; i < batchFiles.files.length; i++) {
-                formData.append('zip_files', batchFiles.files[i]);
-            }
+        const tbody = document.getElementById("batchTableBody");
+        tbody.innerHTML = "";
 
-            try {
-                // 1. Submit Job
-                const response = await fetch('/batch_process', { method: 'POST', body: formData });
-                const data = await response.json();
+        results.forEach((row) => {
+          const tr = document.createElement("tr");
+          const isMatch = row.Status === "MATCH";
+          const isError = !isMatch; // Warning or Error
 
-                if (!response.ok) throw new Error(data.error || "Failed to start");
+          if (isError) {
+            tr.classList.add("batch-row-error");
+          } else {
+            tr.classList.add("batch-row-success");
+          }
 
-                const jobId = data.job_id;
+          const icon = isMatch ? "✅" : row.Status === "Error" ? "❌" : "⚠️";
+          const statusText = row.Status || "Unknown";
+          const errorMsg =
+            row.Error_Message ||
+            (isMatch ? "All fields match" : "Mismatch found");
 
-                // 2. Poll Status
-                let complete = false;
-                while (!complete) {
-                    await new Promise(r => setTimeout(r, 1000)); // Wait 1 sec
-
-                    const statusRes = await fetch(`/batch_status/${jobId}`);
-                    const statusData = await statusRes.json();
-
-                    if (statusData.status === 'processing' || statusData.status === 'queued') {
-                        const pct = statusData.progress || 0;
-                        progressBar.style.width = `${pct}%`;
-                        progressText.textContent = `Processing... ${pct}%`;
-                    } else if (statusData.status === 'completed') {
-                        progressBar.style.width = '100%';
-                        progressText.textContent = 'Completed!';
-                        complete = true;
-
-                        // Show Results Summary
-                        renderBatchResults(statusData.results, jobId);
-
-                        // Auto-Download removed as per user request
-                        // downloadBatchReport();
-                    } else if (statusData.status === 'failed') {
-                        throw new Error(statusData.error || "Job failed");
-                    }
-                }
-
-            } catch (e) {
-                alert("Error: " + e.message);
-                progressText.textContent = 'Error occurred';
-                progressContainer.classList.add('error');
-            } finally {
-                btn.disabled = false;
-                // btn.classList.remove('hidden'); // Keep hidden if we showed results
-            }
-        }
-
-        let currentJobId = null;
-
-        function renderBatchResults(results, jobId) {
-            currentJobId = jobId;
-            document.getElementById('batchProgressContainer').classList.add('hidden');
-            document.getElementById('batchResultsContainer').classList.remove('hidden');
-
-            const tbody = document.getElementById('batchTableBody');
-            tbody.innerHTML = '';
-
-            results.forEach(row => {
-                const tr = document.createElement('tr');
-                const isMatch = row.Status === 'MATCH';
-                const isError = !isMatch; // Warning or Error
-
-                if (isError) {
-                    tr.classList.add('batch-row-error');
-                } else {
-                    tr.classList.add('batch-row-success');
-                }
-
-                const icon = isMatch ? '✅' : (row.Status === 'Error' ? '❌' : '⚠️');
-                const statusText = row.Status || 'Unknown';
-                const errorMsg = row.Error_Message || (isMatch ? 'All fields match' : 'Mismatch found');
-
-                tr.innerHTML = `
+          tr.innerHTML = `
                     <td>
                         <div class="zip-name">${row.Zip_Filename}</div>
                     </td>
@@ -269,42 +309,45 @@
                         ${errorMsg}
                     </td>
                 `;
-                tbody.appendChild(tr);
-            });
+          tbody.appendChild(tr);
+        });
+      }
+
+      function downloadBatchReport() {
+        if (currentJobId) {
+          window.location.href = `/batch_download/${currentJobId}`;
         }
+      }
 
-        function downloadBatchReport() {
-            if (currentJobId) {
-                window.location.href = `/batch_download/${currentJobId}`;
-            }
+      function downloadBatchBLs() {
+        if (currentJobId) {
+          window.location.href = `/batch_download_bls/${currentJobId}`;
         }
+      }
 
-        function downloadBatchBLs() {
-            if (currentJobId) {
-                window.location.href = `/batch_download_bls/${currentJobId}`;
-            }
-        }
+      function resetBatch() {
+        // Reset UI State
+        document.getElementById("batchResultsContainer").classList.add("hidden");
+        document.getElementById("batchProgressContainer").classList.add("hidden");
+        
+        // Restore Upload Zone & Footer
+        document.getElementById("batchDropZone").classList.remove("hidden");
+        document.querySelector(".card-footer").classList.remove("hidden");
+        
+        document.getElementById("batchProcessBtn").classList.remove("hidden");
+        document.getElementById("batchProcessBtn").disabled = true;
 
-        function resetBatch() {
-            // Reset UI State
-            document.getElementById('batchResultsContainer').classList.add('hidden');
-            document.getElementById('batchProgressContainer').classList.add('hidden');
-            document.getElementById('batchProcessBtn').classList.remove('hidden');
-            document.getElementById('batchProcessBtn').disabled = true;
+        // Clear Files
+        batchFiles.items.clear();
+        renderBatchList();
+        document.getElementById("batchDropZone").classList.remove("has-file");
+        document.getElementById("progressBar").style.width = "0%";
+        document.getElementById("progressText").textContent =
+          "Processing... 0%";
+        currentJobId = null;
+      }
 
-            // Clear Files
-            batchFiles.items.clear();
-            renderBatchList();
-            document.getElementById('batchDropZone').classList.remove('has-file');
-            document.getElementById('progressBar').style.width = '0%';
-            document.getElementById('progressText').textContent = 'Processing... 0%';
-            currentJobId = null;
-        }
-
-
-        // --- Standard Logic (Existing) ---
-
+      // --- Standard Logic (Existing) ---
     </script>
-</body>
-
+  </body>
 </html>
