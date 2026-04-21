@@ -216,8 +216,8 @@ def extract_shipping_details_llm(file_path):
     """
 
     models_to_try = [
+        'gemini-2.5-flash',
         'gemini-2.0-flash',
-        'gemini-2.0-flash-lite-preview-02-05',
     ]
 
     start_time = time.time()
@@ -471,8 +471,8 @@ def extract_combined_shipping_details_llm(file_path):
     """
 
     models_to_try = [
+        'gemini-2.5-flash',
         'gemini-2.0-flash',
-        'gemini-2.0-flash-lite-preview-02-05',
     ]
 
     response = None
