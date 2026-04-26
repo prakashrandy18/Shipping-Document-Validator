@@ -5,8 +5,9 @@ import csv
 import threading
 from dotenv import load_dotenv
 
-# Configure a lock to serialize file uploads to prevent network timeouts
-upload_lock = threading.Lock()
+# Configure a semaphore to allow up to 4 concurrent file uploads.
+# This prevents network timeouts while still allowing parallel uploads.
+upload_lock = threading.Semaphore(4)
 
 # Load environment variables
 load_dotenv()
@@ -134,14 +135,21 @@ def extract_shipping_details_llm(file_path):
 
     print(f"Uploading file to Gemini: {file_path}")
     
-    # 1. Upload the file
+    # 1. Upload the file with Retry Logic (for 503 / 400 errors)
     uploaded_file = None
-    try:
-        with upload_lock:
-            uploaded_file = client.files.upload(file=file_path)
-        print(f"File uploaded: {uploaded_file.name}")
-    except Exception as e:
-        raise Exception(f"Failed to upload file to Gemini: {e}")
+    upload_attempts = 3
+    for attempt in range(upload_attempts):
+        try:
+            with upload_lock:
+                uploaded_file = client.files.upload(file=file_path)
+            print(f"File uploaded: {uploaded_file.name}")
+            break
+        except Exception as e:
+            print(f"Upload attempt {attempt + 1} failed: {e}")
+            if attempt < upload_attempts - 1:
+                time.sleep(2)
+            else:
+                raise Exception(f"Failed to upload file to Gemini after {upload_attempts} attempts: {e}")
 
     # 2. Get Rulebook Context (Safe Add-on)
     rulebook_context = load_rules(os.path.basename(file_path))
@@ -412,14 +420,21 @@ def extract_combined_shipping_details_llm(file_path):
 
     print(f"Uploading COMBINED file to Gemini: {file_path}")
     
-    # 1. Upload
+    # 1. Upload with Retry Logic
     uploaded_file = None
-    try:
-        with upload_lock:
-            uploaded_file = client.files.upload(file=file_path)
-        print(f"File uploaded: {uploaded_file.name}")
-    except Exception as e:
-        raise Exception(f"Failed to upload to Gemini: {e}")
+    upload_attempts = 3
+    for attempt in range(upload_attempts):
+        try:
+            with upload_lock:
+                uploaded_file = client.files.upload(file=file_path)
+            print(f"File uploaded: {uploaded_file.name}")
+            break
+        except Exception as e:
+            print(f"Upload attempt {attempt + 1} failed: {e}")
+            if attempt < upload_attempts - 1:
+                time.sleep(2)
+            else:
+                raise Exception(f"Failed to upload to Gemini after {upload_attempts} attempts: {e}")
 
     # 2. Prompt
     prompt = """
