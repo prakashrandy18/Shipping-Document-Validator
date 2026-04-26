@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Prevent Google API 503 Upload rate-limiting
+UPLOAD_SEMAPHORE = threading.Semaphore(2)
+
 # Configure Gemini Client
 try:
     from google import genai
@@ -137,7 +140,8 @@ def extract_shipping_details_llm(file_path):
     upload_attempts = 3
     for attempt in range(upload_attempts):
         try:
-            uploaded_file = local_client.files.upload(file=file_path)
+            with UPLOAD_SEMAPHORE:
+                uploaded_file = local_client.files.upload(file=file_path)
             print(f"File uploaded: {uploaded_file.name}")
             break
         except Exception as e:
@@ -421,7 +425,8 @@ def extract_combined_shipping_details_llm(file_path):
     upload_attempts = 3
     for attempt in range(upload_attempts):
         try:
-            uploaded_file = local_client.files.upload(file=file_path)
+            with UPLOAD_SEMAPHORE:
+                uploaded_file = local_client.files.upload(file=file_path)
             print(f"File uploaded: {uploaded_file.name}")
             break
         except Exception as e:
