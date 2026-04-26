@@ -5,10 +5,6 @@ import csv
 import threading
 from dotenv import load_dotenv
 
-# Configure a semaphore to allow up to 4 concurrent file uploads.
-# This prevents network timeouts while still allowing parallel uploads.
-upload_lock = threading.Semaphore(4)
-
 # Load environment variables
 load_dotenv()
 
@@ -130,9 +126,10 @@ def extract_shipping_details_llm(file_path):
     if not GENAI_AVAILABLE:
         raise ImportError("google-genai library not available")
     
-    if not client:
-        raise ValueError("Gemini Client not initialized. Check API Key.")
-
+    # Create a local client instance specifically for this thread
+    # This prevents the Google SDK from mixing up resumable upload sessions across threads
+    local_client = genai.Client(api_key=GOOGLE_API_KEY)
+    
     print(f"Uploading file to Gemini: {file_path}")
     
     # 1. Upload the file with Retry Logic (for 503 / 400 errors)
@@ -140,8 +137,7 @@ def extract_shipping_details_llm(file_path):
     upload_attempts = 3
     for attempt in range(upload_attempts):
         try:
-            with upload_lock:
-                uploaded_file = client.files.upload(file=file_path)
+            uploaded_file = local_client.files.upload(file=file_path)
             print(f"File uploaded: {uploaded_file.name}")
             break
         except Exception as e:
@@ -242,7 +238,7 @@ def extract_shipping_details_llm(file_path):
         try:
             print(f"Analyzing with model: {model_name}")
             response = generate_content_with_retry(
-                client,
+                local_client,
                 model=model_name,
                 contents=[uploaded_file, prompt]
             )
@@ -415,8 +411,8 @@ def extract_combined_shipping_details_llm(file_path):
     if not GENAI_AVAILABLE:
         raise ImportError("google-genai library not available")
     
-    if not client:
-        raise ValueError("Gemini Client not initialized. Check API Key.")
+    # Create a local client instance specifically for this thread
+    local_client = genai.Client(api_key=GOOGLE_API_KEY)
 
     print(f"Uploading COMBINED file to Gemini: {file_path}")
     
@@ -425,8 +421,7 @@ def extract_combined_shipping_details_llm(file_path):
     upload_attempts = 3
     for attempt in range(upload_attempts):
         try:
-            with upload_lock:
-                uploaded_file = client.files.upload(file=file_path)
+            uploaded_file = local_client.files.upload(file=file_path)
             print(f"File uploaded: {uploaded_file.name}")
             break
         except Exception as e:
@@ -504,7 +499,7 @@ def extract_combined_shipping_details_llm(file_path):
         try:
             print(f"Analyzing Combined PDF with: {model_name}")
             response = generate_content_with_retry(
-                client,
+                local_client,
                 model=model_name,
                 contents=[uploaded_file, prompt]
             )
