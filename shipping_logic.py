@@ -8,12 +8,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Prevent Google API 503 Upload rate-limiting
-UPLOAD_SEMAPHORE = threading.Semaphore(2)
-
 # Configure Gemini Client
 try:
     from google import genai
+    from google.genai import types
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
@@ -135,21 +133,13 @@ def extract_shipping_details_llm(file_path):
     
     print(f"Uploading file to Gemini: {file_path}")
     
-    # 1. Upload the file with Retry Logic (for 503 / 400 errors)
-    uploaded_file = None
-    upload_attempts = 3
-    for attempt in range(upload_attempts):
-        try:
-            with UPLOAD_SEMAPHORE:
-                uploaded_file = local_client.files.upload(file=file_path)
-            print(f"File uploaded: {uploaded_file.name}")
-            break
-        except Exception as e:
-            print(f"Upload attempt {attempt + 1} failed: {e}")
-            if attempt < upload_attempts - 1:
-                time.sleep(2)
-            else:
-                raise Exception(f"Failed to upload file to Gemini after {upload_attempts} attempts: {e}")
+    # 1. Read the file as bytes to avoid buggy resumable upload sessions
+    try:
+        with open(file_path, "rb") as f:
+            pdf_bytes = f.read()
+        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf')
+    except Exception as e:
+        raise Exception(f"Failed to read local PDF file: {e}")
 
     # 2. Get Rulebook Context (Safe Add-on)
     rulebook_context = load_rules(os.path.basename(file_path))
@@ -244,7 +234,7 @@ def extract_shipping_details_llm(file_path):
             response = generate_content_with_retry(
                 local_client,
                 model=model_name,
-                contents=[uploaded_file, prompt]
+                contents=[pdf_part, prompt]
             )
             if response:
                 print(f"Success with {model_name}")
@@ -420,21 +410,13 @@ def extract_combined_shipping_details_llm(file_path):
 
     print(f"Uploading COMBINED file to Gemini: {file_path}")
     
-    # 1. Upload with Retry Logic
-    uploaded_file = None
-    upload_attempts = 3
-    for attempt in range(upload_attempts):
-        try:
-            with UPLOAD_SEMAPHORE:
-                uploaded_file = local_client.files.upload(file=file_path)
-            print(f"File uploaded: {uploaded_file.name}")
-            break
-        except Exception as e:
-            print(f"Upload attempt {attempt + 1} failed: {e}")
-            if attempt < upload_attempts - 1:
-                time.sleep(2)
-            else:
-                raise Exception(f"Failed to upload to Gemini after {upload_attempts} attempts: {e}")
+    # 1. Read the file as bytes to avoid buggy resumable upload sessions
+    try:
+        with open(file_path, "rb") as f:
+            pdf_bytes = f.read()
+        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf')
+    except Exception as e:
+        raise Exception(f"Failed to read local PDF file: {e}")
 
     # 2. Prompt
     prompt = """
@@ -506,7 +488,7 @@ def extract_combined_shipping_details_llm(file_path):
             response = generate_content_with_retry(
                 local_client,
                 model=model_name,
-                contents=[uploaded_file, prompt]
+                contents=[pdf_part, prompt]
             )
             if response:
                 used_model = model_name
