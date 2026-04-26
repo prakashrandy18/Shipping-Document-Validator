@@ -88,9 +88,9 @@ def process_batch_job(job_id, file_paths, app_instance):
     logger.info(f"Job {job_id}: Started processing {len(file_paths)} files.")
     
     try:
-        # We can process ZIPs in parallel too! 
-        # Reverted workers to 5 for better throughput (7 triggered rate limits)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # User is on Tier 1 (Paid), so we can increase concurrency again.
+        # We process 4 ZIPs in parallel.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             future_to_zip = {}
             
             # 1. Submit all Zips / PDFs
@@ -299,7 +299,7 @@ def process_single_zip(zip_path, renamed_bls_dir=None):
                 assigned_docs[key] = remaining_pdfs.pop(0)
 
         extracted_docs = {}
-        # Parallel Extraction Loop
+        # Parallel Extraction Loop - Safe now that we know we have Tier 1 API limits!
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             future_to_key = {}
             for key in ['doc_a', 'doc_b', 'doc_c']:
