@@ -2,7 +2,11 @@ import os
 import time
 import json
 import csv
+import threading
 from dotenv import load_dotenv
+
+# Configure a lock to serialize file uploads to prevent network timeouts
+upload_lock = threading.Lock()
 
 # Load environment variables
 load_dotenv()
@@ -133,7 +137,8 @@ def extract_shipping_details_llm(file_path):
     # 1. Upload the file
     uploaded_file = None
     try:
-        uploaded_file = client.files.upload(file=file_path)
+        with upload_lock:
+            uploaded_file = client.files.upload(file=file_path)
         print(f"File uploaded: {uploaded_file.name}")
     except Exception as e:
         raise Exception(f"Failed to upload file to Gemini: {e}")
@@ -410,7 +415,8 @@ def extract_combined_shipping_details_llm(file_path):
     # 1. Upload
     uploaded_file = None
     try:
-        uploaded_file = client.files.upload(file=file_path)
+        with upload_lock:
+            uploaded_file = client.files.upload(file=file_path)
         print(f"File uploaded: {uploaded_file.name}")
     except Exception as e:
         raise Exception(f"Failed to upload to Gemini: {e}")
