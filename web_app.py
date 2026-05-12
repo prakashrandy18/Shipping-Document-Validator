@@ -280,6 +280,14 @@ def process_single_zip(zip_path, renamed_bls_dir=None):
         pdfs = glob.glob(os.path.join(temp_extract_dir, "**", "*.[pP][dD][fF]"), recursive=True)
         pdfs = [p for p in pdfs if not os.path.basename(p).startswith('.')]
         
+        # Check for empty/corrupt PDFs and warn the user clearly
+        empty_pdfs = [p for p in pdfs if os.path.getsize(p) == 0]
+        if empty_pdfs:
+            names = ', '.join(os.path.basename(p) for p in empty_pdfs)
+            row['Error_Message'] += f"⚠️ Empty PDF(s) found: {names} — these files are 0 bytes. Please re-export/re-download and re-zip. "
+            # Remove empty PDFs so they don't crash downstream
+            pdfs = [p for p in pdfs if os.path.getsize(p) > 0]
+        
         if len(pdfs) < 2:
             row['Status'] = 'Skipped'
             row['Error_Message'] = f"Found {len(pdfs)} PDFs (Need 2+)"
@@ -396,6 +404,67 @@ def process_combined_pdf(pdf_path, renamed_bls_dir=None):
         return [row]
 
 
+@app.route('/batch_create', methods=['POST'])
+def batch_create():
+    """Step 1: Create a job and its directory. Returns a job_id."""
+    job_id = str(uuid.uuid4())
+    job_dir = os.path.join(tempfile.gettempdir(), 'shipping_jobs', job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    JOBS[job_id] = {'status': 'uploading', 'progress': 0, 'job_dir': job_dir, 'file_paths': []}
+    logger.info(f"Created job {job_id}")
+    return jsonify({'success': True, 'job_id': job_id})
+
+
+@app.route('/batch_upload/<job_id>', methods=['POST'])
+def batch_upload(job_id):
+    """Step 2: Upload ONE file at a time to avoid proxy size/timeout limits."""
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'No file provided'}), 400
+
+    fname = f.filename.lower()
+    if not (fname.endswith('.zip') or fname.endswith('.pdf')):
+        return jsonify({'error': 'Only ZIP and PDF files accepted'}), 400
+
+    try:
+        path = os.path.join(job['job_dir'], f.filename)
+        f.save(path)
+        job['file_paths'].append(path)
+        logger.info(f"Job {job_id}: Uploaded {f.filename} ({len(job['file_paths'])} files total)")
+        return jsonify({'success': True, 'files_uploaded': len(job['file_paths'])})
+    except Exception as e:
+        logger.error(f"Job {job_id}: Upload error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/batch_start/<job_id>', methods=['POST'])
+def batch_start(job_id):
+    """Step 3: Start processing after all files are uploaded."""
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+
+    file_paths = job.get('file_paths', [])
+    if not file_paths:
+        return jsonify({'error': 'No files uploaded for this job'}), 400
+
+    job['status'] = 'queued'
+    job['total'] = len(file_paths)
+    logger.info(f"Job {job_id}: Starting processing of {len(file_paths)} files.")
+
+    thread = threading.Thread(target=process_batch_job, args=(job_id, file_paths, app))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({'success': True, 'job_id': job_id, 'file_count': len(file_paths)})
+
+
+# Legacy fallback — kept for compatibility but no longer used by the UI
 @app.route('/batch_process', methods=['POST'])
 def batch_process():
     uploaded_files = request.files.getlist('zip_files')
@@ -404,7 +473,6 @@ def batch_process():
     job_id = str(uuid.uuid4())
     logger.info(f"Received batch request {job_id} with {len(uploaded_files)} files.")
 
-    # Create persistent job dir
     job_dir = os.path.join(tempfile.gettempdir(), 'shipping_jobs', job_id)
     os.makedirs(job_dir, exist_ok=True)
 
@@ -413,8 +481,7 @@ def batch_process():
         for f in uploaded_files:
             fname = f.filename.lower()
             if fname.endswith('.zip') or fname.endswith('.pdf'):
-                # Save directly to disk, avoiding memory issues
-                path = os.path.join(job_dir, f.filename) # insecure_filename technically, but trusted user
+                path = os.path.join(job_dir, f.filename)
                 f.save(path)
                 file_paths.append(path)
     except Exception as e:
@@ -426,7 +493,6 @@ def batch_process():
 
     JOBS[job_id] = {'status': 'queued', 'progress': 0}
     
-    # Start Thread
     thread = threading.Thread(target=process_batch_job, args=(job_id, file_paths, app))
     thread.daemon = True
     thread.start()

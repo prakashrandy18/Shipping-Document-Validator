@@ -194,53 +194,84 @@
         const progressText = document.getElementById("progressText");
 
         btn.disabled = true;
-        btn.classList.add("hidden"); // Hide button while processing
+        btn.classList.add("hidden");
         progressContainer.classList.remove("hidden");
         progressBar.style.width = "0%";
         progressText.textContent = "Starting...";
 
-        const formData = new FormData();
-        for (let i = 0; i < batchFiles.files.length; i++) {
-          formData.append("zip_files", batchFiles.files[i]);
+        // Helper: safely parse JSON, or throw a clear error if HTML is returned
+        async function safeJson(res, context) {
+          const ct = res.headers.get("content-type") || "";
+          if (!ct.includes("application/json")) {
+            if (res.status === 502 || res.status === 503) {
+              throw new Error(`Server is starting up or timed out (${res.status}). Please wait and retry.`);
+            }
+            if (res.status === 413) {
+              throw new Error("File too large for the server proxy. Try smaller files.");
+            }
+            throw new Error(`Server returned HTML instead of JSON during "${context}" (HTTP ${res.status}). App may be waking up — retry in 30s.`);
+          }
+          return res.json();
         }
 
+        const totalFiles = batchFiles.files.length;
+
         try {
-          // 1. Submit Job
-          const response = await fetch("/batch_process", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
+          // STEP 1: Create the job
+          progressText.textContent = "Creating job...";
+          const createRes = await fetch("/batch_create", { method: "POST" });
+          const createData = await safeJson(createRes, "create job");
+          if (!createRes.ok) throw new Error(createData.error || "Failed to create job");
+          const jobId = createData.job_id;
 
-          if (!response.ok) throw new Error(data.error || "Failed to start");
+          // STEP 2: Upload files ONE BY ONE (avoids proxy size/timeout limits)
+          for (let i = 0; i < totalFiles; i++) {
+            const file = batchFiles.files[i];
+            progressText.textContent = `Uploading file ${i + 1} of ${totalFiles}: ${file.name}`;
+            progressBar.style.width = `${Math.round(((i) / totalFiles) * 50)}%`; // Upload = 0-50%
 
-          const jobId = data.job_id;
+            const formData = new FormData();
+            formData.append("file", file);
 
-          // 2. Poll Status
+            const uploadRes = await fetch(`/batch_upload/${jobId}`, {
+              method: "POST",
+              body: formData,
+            });
+            const uploadData = await safeJson(uploadRes, `upload ${file.name}`);
+            if (!uploadRes.ok) throw new Error(uploadData.error || `Failed to upload ${file.name}`);
+          }
+
+          progressBar.style.width = "50%";
+          progressText.textContent = "All files uploaded. Starting processing...";
+
+          // STEP 3: Start processing
+          const startRes = await fetch(`/batch_start/${jobId}`, { method: "POST" });
+          const startData = await safeJson(startRes, "start processing");
+          if (!startRes.ok) throw new Error(startData.error || "Failed to start processing");
+
+          // STEP 4: Poll Status (processing = 50-100%)
           let complete = false;
           while (!complete) {
-            await new Promise((r) => setTimeout(r, 1000)); // Wait 1 sec
+            await new Promise((r) => setTimeout(r, 1000));
 
             const statusRes = await fetch(`/batch_status/${jobId}`);
-            const statusData = await statusRes.json();
+            const statusData = await safeJson(statusRes, "status poll");
 
             if (
               statusData.status === "processing" ||
               statusData.status === "queued"
             ) {
               const pct = statusData.progress || 0;
-              progressBar.style.width = `${pct}%`;
+              // Map processing progress (0-100) to bar (50-100%)
+              const barPct = 50 + Math.round(pct * 0.5);
+              progressBar.style.width = `${barPct}%`;
               progressText.textContent = `Processing... ${pct}%`;
             } else if (statusData.status === "completed") {
               progressBar.style.width = "100%";
               progressText.textContent = "Completed!";
               complete = true;
 
-              // Show Results Summary
               renderBatchResults(statusData.results, jobId);
-
-              // Auto-Download removed as per user request
-              // downloadBatchReport();
             } else if (statusData.status === "failed") {
               throw new Error(statusData.error || "Job failed");
             }
@@ -251,7 +282,6 @@
           progressContainer.classList.add("error");
         } finally {
           btn.disabled = false;
-          // btn.classList.remove('hidden'); // Keep hidden if we showed results
         }
       }
 
