@@ -124,27 +124,50 @@ def load_rules(filename):
         print(f"Error loading rules: {e}")
     
     return context
+def _convert_pdf_to_image_parts(file_path):
+    """
+    Convert PDF pages to PNG image Parts using PyMuPDF.
+    This is a fallback for malformed PDFs that Gemini's PDF parser rejects.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        raise ImportError("PyMuPDF is required for image fallback: pip install PyMuPDF")
+    
+    doc = fitz.open(file_path)
+    image_parts = []
+    for i, page in enumerate(doc):
+        pix = page.get_pixmap(dpi=200)
+        img_bytes = pix.tobytes('png')
+        image_parts.append(types.Part.from_bytes(data=img_bytes, mime_type='image/png'))
+        print(f"  Converted page {i+1}/{len(doc)} to PNG ({len(img_bytes)} bytes)")
+    doc.close()
+    return image_parts
+
+
 def extract_shipping_details_llm(file_path):
     """
-    Extract shipping details using Google Gemini 1.5 Flash (Multimodal).
-    Uploads the PDF directly so the model can 'see' the layout.
+    Extract shipping details using Google Gemini (Multimodal).
+    Sends the PDF directly. If the PDF is malformed and rejected by the API,
+    automatically falls back to converting pages to images via PyMuPDF.
     """
     if not GENAI_AVAILABLE:
         raise ImportError("google-genai library not available")
     
     # Create a local client instance specifically for this thread
-    # This prevents the Google SDK from mixing up resumable upload sessions across threads
     local_client = genai.Client(api_key=GOOGLE_API_KEY)
     
-    print(f"Uploading file to Gemini: {file_path}")
+    print(f"Processing file: {file_path}")
     
-    # 1. Read the file as bytes to avoid buggy resumable upload sessions
+    # 1. Read the file as bytes (primary method)
     try:
         with open(file_path, "rb") as f:
             pdf_bytes = f.read()
-        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf')
+        print(f"Read PDF: {len(pdf_bytes)} bytes")
+        content_parts = [types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf')]
+        used_fallback = False
     except Exception as e:
-        raise Exception(f"Failed to read local PDF file: {e}")
+        raise Exception(f"Failed to read PDF file: {e}")
 
     # 2. Get Rulebook Context (Safe Add-on)
     rulebook_context = load_rules(os.path.basename(file_path))
@@ -224,9 +247,9 @@ def extract_shipping_details_llm(file_path):
     """
 
     models_to_try = [
-        'gemini-1.5-flash',
-        'gemini-2.0-flash',
-        'gemini-1.5-pro',  # Robust model for complex documents
+        'gemini-2.0-flash', 
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
     ]
 
     start_time = time.time()
@@ -234,20 +257,51 @@ def extract_shipping_details_llm(file_path):
     last_error = None
     used_model = None
 
+    # --- Stage 1: Try sending PDF bytes directly (fast path) ---
     for model_name in models_to_try:
         try:
             print(f"Analyzing with model: {model_name}")
             response = generate_content_with_retry(
                 local_client,
                 model=model_name,
-                contents=[pdf_part, prompt]
+                contents=content_parts + [prompt]
             )
             if response:
                 print(f"Success with {model_name}")
                 used_model = model_name
                 break
         except Exception as e:
-            print(f"Model {model_name} failed: {e}")
+            error_str = str(e)
+            print(f"Model {model_name} failed: {error_str}")
+            last_error = e
+            # If INVALID_ARGUMENT, the PDF itself is the problem — skip other models
+            if "INVALID_ARGUMENT" in error_str:
+                print("PDF rejected by API (likely malformed). Will try image fallback.")
+                break
+
+    # --- Stage 2: Image fallback for malformed PDFs ---
+    if not response and not used_fallback and last_error and "INVALID_ARGUMENT" in str(last_error):
+        print(f"Falling back to image conversion for: {file_path}")
+        try:
+            image_parts = _convert_pdf_to_image_parts(file_path)
+            used_fallback = True
+            for model_name in models_to_try:
+                try:
+                    print(f"[Image Fallback] Analyzing with: {model_name}")
+                    response = generate_content_with_retry(
+                        local_client,
+                        model=model_name,
+                        contents=image_parts + [prompt]
+                    )
+                    if response:
+                        print(f"[Image Fallback] Success with {model_name}")
+                        used_model = model_name
+                        break
+                except Exception as e:
+                    print(f"[Image Fallback] Model {model_name} failed: {e}")
+                    last_error = e
+        except Exception as e:
+            print(f"Image fallback failed: {e}")
             last_error = e
     
     end_time = time.time()
@@ -416,15 +470,17 @@ def extract_combined_shipping_details_llm(file_path):
     # Create a local client instance specifically for this thread
     local_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-    print(f"Uploading COMBINED file to Gemini: {file_path}")
+    print(f"Processing COMBINED file: {file_path}")
     
-    # 1. Read the file as bytes to avoid buggy resumable upload sessions
+    # 1. Read PDF bytes (primary method)
     try:
         with open(file_path, "rb") as f:
             pdf_bytes = f.read()
-        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf')
+        print(f"Read COMBINED PDF: {len(pdf_bytes)} bytes")
+        content_parts = [types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf')]
+        used_fallback = False
     except Exception as e:
-        raise Exception(f"Failed to read local PDF file: {e}")
+        raise Exception(f"Failed to read combined PDF: {e}")
 
     # 2. Prompt
     prompt = """
@@ -482,28 +538,57 @@ def extract_combined_shipping_details_llm(file_path):
     """
 
     models_to_try = [
-        'gemini-1.5-flash',
         'gemini-2.0-flash',
-        'gemini-1.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
     ]
 
     response = None
     last_error = None
     used_model = None
 
+    # --- Stage 1: Try sending PDF bytes directly ---
     for model_name in models_to_try:
         try:
             print(f"Analyzing Combined PDF with: {model_name}")
             response = generate_content_with_retry(
                 local_client,
                 model=model_name,
-                contents=[pdf_part, prompt]
+                contents=content_parts + [prompt]
             )
             if response:
                 used_model = model_name
                 break
         except Exception as e:
-            print(f"Model {model_name} failed: {e}")
+            error_str = str(e)
+            print(f"Model {model_name} failed: {error_str}")
+            last_error = e
+            if "INVALID_ARGUMENT" in error_str:
+                print("Combined PDF rejected by API. Will try image fallback.")
+                break
+
+    # --- Stage 2: Image fallback for malformed PDFs ---
+    if not response and not used_fallback and last_error and "INVALID_ARGUMENT" in str(last_error):
+        print(f"Falling back to image conversion for combined PDF: {file_path}")
+        try:
+            image_parts = _convert_pdf_to_image_parts(file_path)
+            used_fallback = True
+            for model_name in models_to_try:
+                try:
+                    print(f"[Image Fallback] Combined PDF with: {model_name}")
+                    response = generate_content_with_retry(
+                        local_client,
+                        model=model_name,
+                        contents=image_parts + [prompt]
+                    )
+                    if response:
+                        used_model = model_name
+                        break
+                except Exception as e:
+                    print(f"[Image Fallback] Model {model_name} failed: {e}")
+                    last_error = e
+        except Exception as e:
+            print(f"Image fallback failed for combined PDF: {e}")
             last_error = e
 
     if not response:
