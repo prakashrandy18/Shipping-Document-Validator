@@ -1382,7 +1382,7 @@ body {
 }
 
 .batch-row-success {
-  /* valid row */
+  /* No specific styles for success rows */
 }
 
 .batch-row-error {
@@ -1405,10 +1405,9 @@ body {
 .batch-details {
   font-size: 0.85rem;
   opacity: 0.9;
-  max-width: 300px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 500px;
+  word-wrap: break-word;
+  line-height: 1.4;
 }
 
 .batch-actions-footer {
@@ -1504,6 +1503,7 @@ body {
   margin: 0;
   background: linear-gradient(90deg, #fff, #818cf8);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1615,6 +1615,7 @@ body {
   /* Tighter, more modern */
   background: linear-gradient(to right, #fff, #94a3b8);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 

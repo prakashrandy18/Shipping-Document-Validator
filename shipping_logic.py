@@ -67,23 +67,28 @@ FIELD_CONFIG = {
 }
 
 import random
+import threading
 
-def generate_content_with_retry(client, model, contents, retries=3, base_delay=2):
+# Global semaphore to limit concurrent Gemini API calls
+API_SEMAPHORE = threading.Semaphore(2)
+
+def generate_content_with_retry(client, model, contents, retries=5, base_delay=4):
     """
     Wrapper for Gemini API call with exponential backoff for 429/5xx errors.
     """
     last_exception = None
     for i in range(retries + 1):
         try:
-            return client.models.generate_content(model=model, contents=contents)
+            with API_SEMAPHORE:
+                return client.models.generate_content(model=model, contents=contents)
         except Exception as e:
             last_exception = e
-            error_str = str(e)
+            error_str = str(e).lower()
             # Check for transient errors
-            is_transient = "429" in error_str or "Quota" in error_str or "500" in error_str or "503" in error_str or "Resource exhausted" in error_str
+            is_transient = "429" in error_str or "quota" in error_str or "500" in error_str or "503" in error_str or "resource exhausted" in error_str or "too many requests" in error_str
             
             if is_transient and i < retries:
-                sleep_time = base_delay * (2 ** i) + random.uniform(0, 1)
+                sleep_time = base_delay * (2 ** i) + random.uniform(1, 3)
                 print(f"API Error ({e}). Retrying in {sleep_time:.2f}s...")
                 time.sleep(sleep_time)
                 continue
@@ -219,8 +224,9 @@ def extract_shipping_details_llm(file_path):
     """
 
     models_to_try = [
-        'gemini-2.5-flash',
+        'gemini-1.5-flash',
         'gemini-2.0-flash',
+        'gemini-1.5-pro',  # Robust model for complex documents
     ]
 
     start_time = time.time()
@@ -249,9 +255,11 @@ def extract_shipping_details_llm(file_path):
 
     if not response:
         error_msg = str(last_error) if last_error else "Unknown error"
-        if "Quota" in error_msg or "429" in error_msg:
-             raise Exception("Google Gemini API Quota Exceeded. Please wait a few minutes.")
-        raise Exception(f"All Gemini models failed. Last error: {error_msg}")
+        # Check for quota error in the last failure
+        if any(keyword in error_msg.lower() for keyword in ["quota", "429", "resource exhausted", "too many requests"]):
+             raise Exception("Gemini API Quota Exceeded (429). The system is under heavy load, please wait a minute before retrying.")
+        
+        raise Exception(f"All Gemini models failed. This usually happens if the PDF is unreadable or the API is down. Last error: {error_msg}")
 
     try:    
         # Clean response text
@@ -474,8 +482,9 @@ def extract_combined_shipping_details_llm(file_path):
     """
 
     models_to_try = [
-        'gemini-2.5-flash',
+        'gemini-1.5-flash',
         'gemini-2.0-flash',
+        'gemini-1.5-pro',
     ]
 
     response = None
@@ -498,7 +507,10 @@ def extract_combined_shipping_details_llm(file_path):
             last_error = e
 
     if not response:
-        raise Exception(f"Gemini Analysis Failed: {last_error}")
+        error_msg = str(last_error) if last_error else "Unknown error"
+        if any(keyword in error_msg.lower() for keyword in ["quota", "429", "resource exhausted", "too many requests"]):
+             raise Exception("Gemini API Quota Exceeded (429). Please wait a minute.")
+        raise Exception(f"Combined Gemini Analysis Failed. Last error: {error_msg}")
 
     try:
         # Parse JSON
