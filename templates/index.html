@@ -67,7 +67,7 @@
             <div id="batchProgressContainer" class="progress-container hidden">
               <div class="progress-label">
                 <span id="progressText">Processing... 0%</span>
-                <span class="spinner-small"></span>
+                <span id="progressSpinner" class="spinner-small"></span>
               </div>
               <div class="progress-track">
                 <div
@@ -78,7 +78,35 @@
               </div>
             </div>
 
-            <div class="card-footer">
+            <!-- Error Banner (hidden by default) -->
+            <div id="errorBanner" class="error-banner hidden">
+              <div class="error-banner-icon">⚠️</div>
+              <div class="error-banner-content">
+                <h4 id="errorTitle">Processing Failed</h4>
+                <p id="errorMessage">An error occurred.</p>
+                <a id="errorLink" href="https://aistudio.google.com/" target="_blank" rel="noopener" class="error-link hidden">
+                  Check API Quota →
+                </a>
+              </div>
+              <div class="error-banner-actions">
+                <button class="primary-btn small-btn" onclick="retryBatch()">
+                  <span>🔄 Retry</span>
+                </button>
+                <button class="secondary-btn small-btn" onclick="resetBatch()">
+                  <span>Reset</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="card-footer card-footer-flex">
+              <div class="model-selection-container">
+                <label for="modelSelect" class="model-label">Select AI Model:</label>
+                <select id="modelSelect" class="model-select-dropdown">
+                  <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Recommended Default)</option>
+                  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite (Fast / High Quota)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Highest Accuracy / Low Quota)</option>
+                </select>
+              </div>
               <button
                 id="batchProcessBtn"
                 class="primary-btn"
@@ -245,7 +273,14 @@
           progressText.textContent = "All files uploaded. Starting processing...";
 
           // STEP 3: Start processing
-          const startRes = await fetch(`/batch_start/${jobId}`, { method: "POST" });
+          const selectedModel = document.getElementById("modelSelect").value;
+          const startRes = await fetch(`/batch_start/${jobId}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ model: selectedModel }),
+          });
           const startData = await safeJson(startRes, "start processing");
           if (!startRes.ok) throw new Error(startData.error || "Failed to start processing");
 
@@ -277,9 +312,27 @@
             }
           }
         } catch (e) {
-          alert("Error: " + e.message);
-          progressText.textContent = "Error occurred";
-          progressContainer.classList.add("error");
+          // Hide progress, show error banner
+          progressContainer.classList.add("hidden");
+          const errorBanner = document.getElementById("errorBanner");
+          const errorTitle = document.getElementById("errorTitle");
+          const errorMessage = document.getElementById("errorMessage");
+          const errorLink = document.getElementById("errorLink");
+
+          const isQuota = e.message.toLowerCase().includes("429") ||
+                          e.message.toLowerCase().includes("quota") ||
+                          e.message.toLowerCase().includes("rate limit");
+
+          errorTitle.textContent = isQuota ? "API Quota Exceeded" : "Processing Failed";
+          errorMessage.textContent = e.message;
+
+          if (isQuota) {
+            errorLink.classList.remove("hidden");
+          } else {
+            errorLink.classList.add("hidden");
+          }
+
+          errorBanner.classList.remove("hidden");
         } finally {
           btn.disabled = false;
         }
@@ -348,10 +401,18 @@
         }
       }
 
+      function retryBatch() {
+        // Hide error banner, re-show progress, and re-trigger
+        document.getElementById("errorBanner").classList.add("hidden");
+        document.getElementById("batchProgressContainer").classList.remove("hidden");
+        startBatchProcess();
+      }
+
       function resetBatch() {
         // Reset UI State
         document.getElementById("batchResultsContainer").classList.add("hidden");
         document.getElementById("batchProgressContainer").classList.add("hidden");
+        document.getElementById("errorBanner").classList.add("hidden");
         
         // Restore Upload Zone & Footer
         document.getElementById("batchDropZone").classList.remove("hidden");

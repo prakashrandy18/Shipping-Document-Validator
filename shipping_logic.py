@@ -72,11 +72,19 @@ import threading
 # Global semaphore to limit concurrent Gemini API calls
 API_SEMAPHORE = threading.Semaphore(2)
 
-def generate_content_with_retry(client, model, contents, retries=5, base_delay=4):
+class QuotaExceededException(Exception):
+    """Raised when the Gemini API returns persistent 429 / quota errors."""
+    pass
+
+
+def generate_content_with_retry(client, model, contents, retries=2, base_delay=2):
     """
     Wrapper for Gemini API call with exponential backoff for 429/5xx errors.
+    Fails fast on persistent quota (429) errors by raising QuotaExceededException.
     """
     last_exception = None
+    consecutive_429 = 0
+
     for i in range(retries + 1):
         try:
             with API_SEMAPHORE:
@@ -84,20 +92,38 @@ def generate_content_with_retry(client, model, contents, retries=5, base_delay=4
         except Exception as e:
             last_exception = e
             error_str = str(e).lower()
-            # Check for transient errors
-            is_transient = "429" in error_str or "quota" in error_str or "500" in error_str or "503" in error_str or "resource exhausted" in error_str or "too many requests" in error_str
-            
+
+            is_quota = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str or "too many requests" in error_str
+            is_server = "500" in error_str or "503" in error_str
+            is_transient = is_quota or is_server
+
+            if is_quota:
+                consecutive_429 += 1
+                # If we've hit 429 twice in a row, the quota is clearly exhausted
+                if consecutive_429 >= 2:
+                    raise QuotaExceededException(
+                        f"Gemini API quota exceeded (429). Your API key has hit its rate limit. "
+                        f"Please wait 1-2 minutes or check your quota at https://aistudio.google.com/"
+                    )
+
             if is_transient and i < retries:
-                sleep_time = base_delay * (2 ** i) + random.uniform(1, 3)
-                print(f"API Error ({e}). Retrying in {sleep_time:.2f}s...")
+                sleep_time = base_delay * (2 ** i) + random.uniform(0.5, 1.5)
+                print(f"API Error ({e}). Retrying in {sleep_time:.2f}s (attempt {i+1}/{retries})...")
                 time.sleep(sleep_time)
                 continue
-            
-            # If not transient or out of retries, raise
+
+            # If not transient, raise immediately
             if not is_transient:
                 raise e
-    
+
+    # All retries exhausted
+    if consecutive_429 > 0:
+        raise QuotaExceededException(
+            f"Gemini API quota exceeded after {retries + 1} attempts. "
+            f"Please wait 1-2 minutes or check your quota at https://aistudio.google.com/"
+        )
     raise last_exception or Exception("Retries exhausted")
+
 
 
 def load_rules(filename):
@@ -145,7 +171,7 @@ def _convert_pdf_to_image_parts(file_path):
     return image_parts
 
 
-def extract_shipping_details_llm(file_path):
+def extract_shipping_details_llm(file_path, selected_model=None):
     """
     Extract shipping details using Google Gemini (Multimodal).
     Sends the PDF directly. If the PDF is malformed and rejected by the API,
@@ -251,6 +277,10 @@ def extract_shipping_details_llm(file_path):
         'gemini-2.5-flash',
         'gemini-2.5-pro',
     ]
+    if selected_model:
+        if selected_model in models_to_try:
+            models_to_try.remove(selected_model)
+        models_to_try.insert(0, selected_model)
 
     start_time = time.time()
     response = None
@@ -270,6 +300,9 @@ def extract_shipping_details_llm(file_path):
                 print(f"Success with {model_name}")
                 used_model = model_name
                 break
+        except QuotaExceededException:
+            # Quota is account-level — don't try other models, fail immediately
+            raise
         except Exception as e:
             error_str = str(e)
             print(f"Model {model_name} failed: {error_str}")
@@ -297,9 +330,13 @@ def extract_shipping_details_llm(file_path):
                         print(f"[Image Fallback] Success with {model_name}")
                         used_model = model_name
                         break
+                except QuotaExceededException:
+                    raise
                 except Exception as e:
                     print(f"[Image Fallback] Model {model_name} failed: {e}")
                     last_error = e
+        except QuotaExceededException:
+            raise
         except Exception as e:
             print(f"Image fallback failed: {e}")
             last_error = e
@@ -459,7 +496,7 @@ def compare_three_documents(details_a, details_b, details_c):
     return results
 
 
-def extract_combined_shipping_details_llm(file_path):
+def extract_combined_shipping_details_llm(file_path, selected_model=None):
     """
     Extract shipping details from a COMBINED PDF (containing OBL, Invoice, Packing List).
     Uses Gemini to 'logically split' the document and extract 3 sets of data.
@@ -542,6 +579,10 @@ def extract_combined_shipping_details_llm(file_path):
         'gemini-2.5-flash',
         'gemini-2.5-pro',
     ]
+    if selected_model:
+        if selected_model in models_to_try:
+            models_to_try.remove(selected_model)
+        models_to_try.insert(0, selected_model)
 
     response = None
     last_error = None
@@ -559,6 +600,9 @@ def extract_combined_shipping_details_llm(file_path):
             if response:
                 used_model = model_name
                 break
+        except QuotaExceededException:
+            # Quota is account-level — don't try other models, fail immediately
+            raise
         except Exception as e:
             error_str = str(e)
             print(f"Model {model_name} failed: {error_str}")
@@ -584,9 +628,13 @@ def extract_combined_shipping_details_llm(file_path):
                     if response:
                         used_model = model_name
                         break
+                except QuotaExceededException:
+                    raise
                 except Exception as e:
                     print(f"[Image Fallback] Model {model_name} failed: {e}")
                     last_error = e
+        except QuotaExceededException:
+            raise
         except Exception as e:
             print(f"Image fallback failed for combined PDF: {e}")
             last_error = e

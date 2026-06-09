@@ -17,7 +17,7 @@ import csv
 import io
 from flask import Flask, render_template, request, jsonify, send_file
 from dotenv import load_dotenv
-from shipping_logic import extract_combined_shipping_details_llm, extract_shipping_details_llm, compare_three_documents, classify_document, GENAI_AVAILABLE, GOOGLE_API_KEY
+from shipping_logic import extract_combined_shipping_details_llm, extract_shipping_details_llm, compare_three_documents, classify_document, GENAI_AVAILABLE, GOOGLE_API_KEY, QuotaExceededException
 
 
 import logging
@@ -63,7 +63,7 @@ JOBS = {}
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
-def process_batch_job(job_id, file_paths, app_instance):
+def process_batch_job(job_id, file_paths, app_instance, model_name=None):
     """
     Background worker to process ZIP files and generate Excel report.
     """
@@ -85,7 +85,7 @@ def process_batch_job(job_id, file_paths, app_instance):
     renamed_bls_dir = os.path.join(job_dir, "Renamed_BLs")
     os.makedirs(renamed_bls_dir, exist_ok=True)
     
-    logger.info(f"Job {job_id}: Started processing {len(file_paths)} files.")
+    logger.info(f"Job {job_id}: Started processing {len(file_paths)} files with model {model_name}.")
     
     try:
         # User is on Tier 1 (Paid), so we can increase concurrency again.
@@ -98,24 +98,43 @@ def process_batch_job(job_id, file_paths, app_instance):
                 # Check extension
                 filename = os.path.basename(file_path)
                 if file_path.lower().endswith('.pdf'):
-                     future_to_zip[executor.submit(process_combined_pdf, file_path, renamed_bls_dir)] = filename
+                     future_to_zip[executor.submit(process_combined_pdf, file_path, renamed_bls_dir, model_name)] = filename
                 else:
-                     future_to_zip[executor.submit(process_single_zip, file_path, renamed_bls_dir)] = filename
+                     future_to_zip[executor.submit(process_single_zip, file_path, renamed_bls_dir, model_name)] = filename
             
             # 2. Collect Results
             completed_count = 0
+            quota_exceeded = False
             for future in concurrent.futures.as_completed(future_to_zip):
                 zip_name = future_to_zip[future]
                 try:
                     res = future.result() # Returns a list of rows (usually 1 row per zip)
                     results.extend(res)
                     logger.info(f"Job {job_id}: Processed {zip_name} - Status: {res[0].get('Status')}")
+                except QuotaExceededException as qe:
+                    logger.error(f"Job {job_id}: QUOTA EXCEEDED while processing {zip_name}")
+                    results.append({'Zip_Filename': zip_name, 'Status': 'Error', 'Error_Message': str(qe)})
+                    quota_exceeded = True
+                    # Cancel remaining futures
+                    for f in future_to_zip:
+                        f.cancel()
+                    break
                 except Exception as e:
                     logger.error(f"Job {job_id}: Error processing {zip_name}: {e}")
                     results.append({'Zip_Filename': zip_name, 'Status': 'Error', 'Error_Message': str(e)})
                 
                 completed_count += 1
                 JOBS[job_id]['progress'] = int((completed_count / len(file_paths)) * 100)
+        
+        if quota_exceeded:
+            JOBS[job_id]['status'] = 'failed'
+            JOBS[job_id]['error'] = (
+                '⚠️ Gemini API Quota Exceeded (429). Your API key has hit its rate limit. '
+                'Please wait 1-2 minutes and try again, or check your quota at https://aistudio.google.com/'
+            )
+            JOBS[job_id]['results'] = results
+            logger.error(f"Job {job_id} aborted due to quota exceeded.")
+            return
         
         # 3. Generate Excel Report using openpyxl
         wb = Workbook()
@@ -265,7 +284,7 @@ def process_batch_job(job_id, file_paths, app_instance):
         # BUT: we serve files from memory (BytesIO) in this code, so removing dir is fine.
         shutil.rmtree(job_dir, ignore_errors=True)
 
-def process_single_zip(zip_path, renamed_bls_dir=None):
+def process_single_zip(zip_path, renamed_bls_dir=None, model_name=None):
     """
     Helper to process ONE zip file. Returns a list of result rows (usually 1).
     """
@@ -313,7 +332,7 @@ def process_single_zip(zip_path, renamed_bls_dir=None):
             for key in ['doc_a', 'doc_b', 'doc_c']:
                 pdf_file = assigned_docs.get(key)
                 if pdf_file:
-                    future_to_key[executor.submit(extract_shipping_details_llm, pdf_file)] = (key, pdf_file)
+                    future_to_key[executor.submit(extract_shipping_details_llm, pdf_file, model_name)] = (key, pdf_file)
             
             for future in concurrent.futures.as_completed(future_to_key):
                 key, pdf_file = future_to_key[future]
@@ -336,6 +355,8 @@ def process_single_zip(zip_path, renamed_bls_dir=None):
                                     shutil.copy2(pdf_file, os.path.join(renamed_bls_dir, new_name))
                             except Exception as e:
                                 print(f"Failed to rename BL: {e}")
+                except QuotaExceededException:
+                    raise
                 except Exception as e:
                     row['Error_Message'] += f"[{key} Err: {str(e)}] "
         
@@ -352,6 +373,9 @@ def process_single_zip(zip_path, renamed_bls_dir=None):
         
         return [row]
 
+    except QuotaExceededException:
+        # Let quota errors propagate up to process_batch_job for fast-fail
+        raise
     except Exception as e:
         row['Status'] = 'Error'
         row['Error_Message'] = str(e)
@@ -363,7 +387,7 @@ def process_single_zip(zip_path, renamed_bls_dir=None):
              row['Duration_Seconds'] = round(time.time() - start_time, 2)
 
 
-def process_combined_pdf(pdf_path, renamed_bls_dir=None):
+def process_combined_pdf(pdf_path, renamed_bls_dir=None, model_name=None):
     """
     Helper to process ONE combined PDF file.
     """
@@ -372,7 +396,7 @@ def process_combined_pdf(pdf_path, renamed_bls_dir=None):
     
     try:
         # Direct AI Logic
-        extracted_docs = extract_combined_shipping_details_llm(pdf_path)
+        extracted_docs = extract_combined_shipping_details_llm(pdf_path, model_name)
         
         # Populate row values for Excel
         for key in ['doc_a', 'doc_b', 'doc_c']:
@@ -397,6 +421,9 @@ def process_combined_pdf(pdf_path, renamed_bls_dir=None):
         row['Duration_Seconds'] = round(time.time() - start_time, 2)
         return [row]
 
+    except QuotaExceededException:
+        # Let quota errors propagate up to process_batch_job for fast-fail
+        raise
     except Exception as e:
         row['Status'] = 'Error'
         row['Error_Message'] = str(e)
@@ -453,11 +480,16 @@ def batch_start(job_id):
     if not file_paths:
         return jsonify({'error': 'No files uploaded for this job'}), 400
 
+    model_name = None
+    if request.is_json:
+        data = request.get_json()
+        model_name = data.get('model')
+
     job['status'] = 'queued'
     job['total'] = len(file_paths)
-    logger.info(f"Job {job_id}: Starting processing of {len(file_paths)} files.")
+    logger.info(f"Job {job_id}: Starting processing of {len(file_paths)} files with model {model_name}.")
 
-    thread = threading.Thread(target=process_batch_job, args=(job_id, file_paths, app))
+    thread = threading.Thread(target=process_batch_job, args=(job_id, file_paths, app, model_name))
     thread.daemon = True
     thread.start()
 

@@ -1654,3 +1654,120 @@ body {
     z-index: 20;
     flex-shrink: 0;
 }
+
+/* Model Selection Styling */
+.card-footer-flex {
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+
+.model-selection-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 16px;
+    border-radius: 30px;
+    border: 1px solid var(--border);
+    transition: var(--transition);
+}
+
+.model-selection-container:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.model-label {
+    font-size: 0.9rem;
+    color: #a1a1aa;
+    font-weight: 500;
+}
+
+.model-select-dropdown {
+    background: #1e1e28;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 0.9rem;
+    outline: none;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.model-select-dropdown:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+
+/* Error Banner Styling */
+.error-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: rgba(239, 68, 68, 0.1); /* light red glass */
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 16px;
+    padding: 16px;
+    margin: 20px 40px;
+    animation: pulseGlow 2s infinite alternate;
+}
+
+.error-banner-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.error-banner-content {
+    flex: 1;
+}
+
+.error-banner-content h4 {
+    color: #fca5a5;
+    margin: 0 0 4px 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.error-banner-content p {
+    color: #fecaca;
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.error-link {
+    display: inline-block;
+    margin-top: 8px;
+    color: #93c5fd;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.error-link:hover {
+    color: #3b82f6;
+    text-decoration: underline;
+}
+
+.error-banner-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.error-banner-actions button {
+    width: 100%;
+}
+
+@keyframes pulseGlow {
+    0% {
+        box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+    }
+    100% {
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.25);
+    }
+}
